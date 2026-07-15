@@ -1,0 +1,6 @@
+{
+  "version": "1",
+  "name": "Camarin AI - Media Processing Microservice",
+  "type": "collection",
+  "ignore": ["node_modules", ".git"]
+}
