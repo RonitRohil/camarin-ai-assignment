@@ -5,8 +5,13 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon src/index.js",
+    "dev:worker": "nodemon src/worker.js",
     "start": "node src/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start:worker": "node src/worker.js",
+    "test": "vitest run",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:generate": "prisma generate",
+    "seed": "node prisma/seed.js"
   },
   "keywords": [],
   "author": "",
