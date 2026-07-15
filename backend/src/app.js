@@ -5,6 +5,7 @@ const cookie_parser = require("cookie-parser");
 const env = require("./config/env");
 const STATUS_CODES = require("./constants/statusCodes");
 const error_handler = require("./middleware/errorHandler");
+const auth_router = require("./routers/auth.router");
 
 const app = express();
 
@@ -39,7 +40,8 @@ app.get("/ready", (req, res) => {
     });
 });
 
-// routers get mounted here, one by one, as each is built
+app.use("/auth", auth_router);
+
 
 app.use((req, res) => {
     res.status(STATUS_CODES.NOT_FOUND).json({

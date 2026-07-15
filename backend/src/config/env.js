@@ -1,6 +1,10 @@
 require("dotenv").config();
 
-const REQUIRED_ENV_VARS = ["DATABASE_URL"];
+const REQUIRED_ENV_VARS = [
+    "DATABASE_URL",
+    "JWT_ACCESS_SECRET",
+    "JWT_REFRESH_SECRET",
+];
 
 const missing_vars = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
 
@@ -20,6 +24,8 @@ const env = {
     PORT: process.env.PORT || 5002,
     CORS_ORIGIN: process.env.CORS_ORIGIN || "http://localhost:5173",
     DATABASE_URL: process.env.DATABASE_URL,
+    JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET,
+    JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET,
 };
 
 module.exports = env;
