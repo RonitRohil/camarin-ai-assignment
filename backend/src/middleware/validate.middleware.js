@@ -13,7 +13,15 @@ const validate = (schema, property = "body") => {
             return next(new ApiError(STATUS_CODES.BAD_REQUEST, message));
         }
 
-        req[property] = value;
+        // Express 5 turned req.query into a getter with no setter (recomputed from
+        // req.url on every access), so a reassignment there is silently dropped -
+        // validated/coerced query values have to live on a separate property instead
+        if (property === "query") {
+            req.validated_query = value;
+        } else {
+            req[property] = value;
+        }
+
         next();
     };
 };

@@ -6,6 +6,7 @@ const REQUIRED_ENV_VARS = [
     "DATABASE_URL",
     "JWT_ACCESS_SECRET",
     "JWT_REFRESH_SECRET",
+    "REDIS_URL",
 ];
 
 if (storage_driver === "r2") {
@@ -43,6 +44,7 @@ const env = {
     R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,
     R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY,
     R2_BUCKET_NAME: process.env.R2_BUCKET_NAME,
+    REDIS_URL: process.env.REDIS_URL,
 };
 
 module.exports = env;
