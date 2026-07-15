@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum job_status {
+  pending
+  processing
+  completed
+  failed
+}
+
+model user {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique
+  password_hash String
+  created_at    DateTime @default(now())
+
+  jobs          job[]
+  notifications notification[]
+
+  @@map("users")
+}
+
+model job {
+  id          String     @id @default(uuid()) @db.Uuid
+  user_id     String     @db.Uuid
+  filename    String
+  storage_key String
+  mime_type   String
+  size_bytes  Int
+  status      job_status @default(pending)
+  attempts    Int        @default(0)
+  error       String?
+  created_at  DateTime   @default(now())
+  updated_at  DateTime   @updatedAt
+
+  user          user            @relation(fields: [user_id], references: [id])
+  result        job_result?
+  notifications notification[]
+
+  @@index([user_id, status, created_at])
+  @@map("jobs")
+}
+
+model job_result {
+  job_id            String   @id @db.Uuid
+  caption           String?
+  labels            Json?
+  safe_search       Json?
+  flagged           Boolean?
+  flagged_category  String?
+  created_at        DateTime @default(now())
+
+  job job @relation(fields: [job_id], references: [id])
+
+  @@map("job_results")
+}
+
+model notification {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  job_id     String   @db.Uuid
+  type       String
+  read       Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  user user @relation(fields: [user_id], references: [id])
+  job  job  @relation(fields: [job_id], references: [id])
+
+  @@index([user_id, read])
+  @@map("notifications")
+}

@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const cookie_parser = require("cookie-parser");
+const env = require("./config/env");
+const STATUS_CODES = require("./constants/statusCodes");
 const error_handler = require("./middleware/errorHandler");
 
 const app = express();
@@ -10,7 +12,7 @@ app.use(helmet());
 
 app.use(
     cors({
-        origin: process.env.CORS_ORIGIN || "http://localhost:5173",
+        origin: env.CORS_ORIGIN,
         credentials: true,
     })
 );
@@ -20,18 +22,18 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookie_parser());
 
 app.get("/health", (req, res) => {
-    res.status(200).json({
+    res.status(STATUS_CODES.OK).json({
         success: true,
-        status_code: 200,
+        status_code: STATUS_CODES.OK,
         message: "ok",
         result: {},
     });
 });
 
 app.get("/ready", (req, res) => {
-    res.status(200).json({
+    res.status(STATUS_CODES.OK).json({
         success: true,
-        status_code: 200,
+        status_code: STATUS_CODES.OK,
         message: "ok",
         result: {},
     });
@@ -40,9 +42,9 @@ app.get("/ready", (req, res) => {
 // routers get mounted here, one by one, as each is built
 
 app.use((req, res) => {
-    res.status(404).json({
+    res.status(STATUS_CODES.NOT_FOUND).json({
         success: false,
-        status_code: 404,
+        status_code: STATUS_CODES.NOT_FOUND,
         message: "route not found",
         result: {},
     });
