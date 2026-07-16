@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { getJob, retryJob } from "../api/jobs.api";
 import JobStatusBadge from "../components/JobStatusBadge";
 import FlaggedBanner from "../components/FlaggedBanner";
+import SafetyBadge from "../components/SafetyBadge";
 import usePolling from "../hooks/usePolling";
 import useJobStream from "../hooks/useJobStream";
 import { formatDateTime, formatFileSize, resolveImageUrl } from "../utils/format";
@@ -153,14 +154,14 @@ const JobDetail = () => {
             {result?.safe_search ? (
                 <section className="job-detail-section">
                     <h2>Safety classification</h2>
-                    <dl className="safe-search-list">
+                    <div className="safety-grid">
                         {Object.entries(result.safe_search).map(([category, likelihood]) => (
-                            <div key={category}>
-                                <dt>{category}</dt>
-                                <dd>{likelihood}</dd>
+                            <div className="safety-card" key={category}>
+                                <span className="safety-card-label">{category}</span>
+                                <SafetyBadge likelihood={likelihood} />
                             </div>
                         ))}
-                    </dl>
+                    </div>
                 </section>
             ) : null}
         </div>

@@ -6,6 +6,8 @@ import { formatDateTime } from "../utils/format";
 
 const NOTIFICATION_LABEL = {
     job_flagged: "A job you uploaded was flagged for review",
+    job_completed: "A job you uploaded finished processing",
+    job_failed: "A job you uploaded failed to process",
 };
 
 const NotificationsBell = () => {
@@ -27,7 +29,7 @@ const NotificationsBell = () => {
         fetchNotifications();
     }, [fetchNotifications]);
 
-    usePolling(fetchNotifications, 20000);
+    usePolling(fetchNotifications, 40000);
 
     useEffect(() => {
         if (!is_open) {
