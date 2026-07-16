@@ -2,10 +2,12 @@ const env = require("../config/env");
 
 const HF_ROUTER_URL = "https://router.huggingface.co/v1/chat/completions";
 
-// Qwen2.5-VL-7B/32B and Llama-3.2-11B-Vision have zero live inferenceProviderMapping
-// entries (checked directly against HF's own API, same as the BLIP investigation) -
-// the 3B variant is the smallest/only one currently live, on featherless-ai.
-const MODEL_NAME = "Qwen/Qwen2.5-VL-3B-Instruct";
+// Verified against the router's own live catalog (GET /v1/models), not just the
+// model-info API's inferenceProviderMapping field - that field claimed
+// Qwen2.5-VL-3B-Instruct was "live" on featherless-ai after it had actually been
+// delisted, which the model-info endpoint never reflected. The /v1/models list is
+// what the router actually honors, so that's the source of truth for this pick.
+const MODEL_NAME = "Qwen/Qwen3-VL-30B-A3B-Instruct";
 
 const CAPTION_PROMPT = "Describe this image in one concise sentence. Output only the caption, nothing else.";
 
