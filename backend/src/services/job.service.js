@@ -73,5 +73,30 @@ exports.getJobById = async ({ user_id, job_id }) => {
         throw new ApiError(STATUS_CODES.NOT_FOUND, "Job not found");
     }
 
-    return job;
+    const image_url = await storage.getSignedUrl(job.storage_key);
+
+    return { ...job, image_url };
+};
+
+exports.retryJob = async ({ user_id, job_id }) => {
+    const job = await prisma_client.job.findFirst({
+        where: { id: job_id, user_id },
+    });
+
+    if (!job) {
+        throw new ApiError(STATUS_CODES.NOT_FOUND, "Job not found");
+    }
+
+    if (job.status !== JOB_STATUS.FAILED) {
+        throw new ApiError(STATUS_CODES.CONFLICT, "Only failed jobs can be retried");
+    }
+
+    const updated_job = await prisma_client.job.update({
+        where: { id: job_id },
+        data: { status: JOB_STATUS.PENDING, attempts: 0, error: null },
+    });
+
+    await queue_service.retryJob(job_id);
+
+    return updated_job;
 };

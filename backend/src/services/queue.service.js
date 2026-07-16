@@ -30,7 +30,22 @@ const enqueueJob = async (job_id) => {
     );
 };
 
+// re-queues an existing (already failed) BullMQ job via its own retry() API,
+// rather than queue.add() with the same jobId - that record still exists since
+// removeOnFail is false, and add() would just collide with it. Falls back to a
+// fresh enqueue if the BullMQ record is somehow gone (e.g. manually cleared).
+const retryJob = async (job_id) => {
+    const bull_job = await image_processing_queue.getJob(job_id);
+
+    if (bull_job) {
+        await bull_job.retry();
+    } else {
+        await enqueueJob(job_id);
+    }
+};
+
 module.exports = {
     image_processing_queue,
     enqueueJob,
+    retryJob,
 };

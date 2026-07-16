@@ -7,6 +7,7 @@ const STATUS_CODES = require("./constants/statusCodes");
 const error_handler = require("./middleware/errorHandler");
 const auth_router = require("./routers/auth.router");
 const job_router = require("./routers/job.router");
+const notification_router = require("./routers/notification.router");
 
 const app = express();
 
@@ -22,6 +23,13 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookie_parser());
+
+// local storage's getSignedUrl (services/storage/local.storage.js) just returns
+// `/uploads/:key` - this is what actually serves that path in dev. R2 doesn't need
+// this, its signed URLs point directly at Cloudflare.
+if (env.STORAGE_DRIVER === "local") {
+    app.use("/uploads", express.static(env.LOCAL_STORAGE_DIR));
+}
 
 app.get("/health", (req, res) => {
     res.status(STATUS_CODES.OK).json({
@@ -43,8 +51,7 @@ app.get("/ready", (req, res) => {
 
 app.use("/auth", auth_router);
 app.use("/jobs", job_router);
-
-// remaining routers get mounted here, one by one, as each is built
+app.use("/notifications", notification_router);
 
 app.use((req, res) => {
     res.status(STATUS_CODES.NOT_FOUND).json({

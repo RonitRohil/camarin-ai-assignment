@@ -3,6 +3,7 @@ const storage = require("../services/storage");
 const { generateCaption } = require("./caption.pipeline");
 const { analyzeImage } = require("./vision.pipeline");
 const JOB_STATUS = require("../constants/jobStatus");
+const sse_service = require("../services/sse.service");
 
 const NOTIFICATION_TYPE_JOB_FLAGGED = "job_flagged";
 
@@ -23,7 +24,10 @@ const runPipeline = async (job_id) => {
         where: { id: job_id },
         data: { status: JOB_STATUS.PROCESSING, attempts: { increment: 1 } },
     });
-    // TODO: publish "processing" status via sse.service.js once built
+    await sse_service.publishJobUpdate(job.user_id, {
+        job_id,
+        status: JOB_STATUS.PROCESSING,
+    });
 
     let job_result = job.result;
 
@@ -74,7 +78,11 @@ const runPipeline = async (job_id) => {
         });
 
         if (err.is_permanent) {
-            // TODO: publish "failed" status via sse.service.js once built
+            await sse_service.publishJobUpdate(job.user_id, {
+                job_id,
+                status: JOB_STATUS.FAILED,
+                error: err.message,
+            });
             return;
         }
 
@@ -87,7 +95,10 @@ const runPipeline = async (job_id) => {
         where: { id: job_id },
         data: { status: JOB_STATUS.COMPLETED, error: null },
     });
-    // TODO: publish "completed" status via sse.service.js once built
+    await sse_service.publishJobUpdate(job.user_id, {
+        job_id,
+        status: JOB_STATUS.COMPLETED,
+    });
 };
 
 module.exports = runPipeline;

@@ -6,6 +6,7 @@ const prisma_client = require("./utils/prismaClient");
 const runPipeline = require("./pipeline/runPipeline");
 const JOB_STATUS = require("./constants/jobStatus");
 const { QUEUE_NAME } = require("./constants/queue");
+const sse_service = require("./services/sse.service");
 
 // sequential for now - the self-hosted caption model is a single in-process
 // singleton, and concurrent inference calls against it are unverified. Revisit
@@ -39,16 +40,24 @@ worker.on("failed", async (job, err) => {
     // every attempt on a transient error, the job would otherwise stay stuck
     // at "processing" forever, so the worker closes that gap here
     if (job.attemptsMade >= job.opts.attempts) {
-        await prisma_client.job
-            .update({
+        try {
+            const updated_job = await prisma_client.job.update({
                 where: { id: job.data.job_id },
                 data: { status: JOB_STATUS.FAILED, error: err.message },
-            })
-            .catch((update_err) => {
-                logger.error(
-                    `failed to mark job ${job.data.job_id} as failed after exhausted retries: ${update_err.message}`
-                );
             });
+
+            await sse_service.publishJobUpdate(updated_job.user_id, {
+                job_id: updated_job.id,
+                status: JOB_STATUS.FAILED,
+                error: err.message,
+            });
+        } 
+        
+        catch (update_err) {
+            logger.error(
+                `failed to mark job ${job.data.job_id} as failed after exhausted retries: ${update_err.message}`
+            );
+        }
     }
 });
 
