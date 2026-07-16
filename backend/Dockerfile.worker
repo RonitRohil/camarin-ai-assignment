@@ -1,0 +1,27 @@
+FROM node:24-slim
+
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+RUN npx prisma generate
+
+ENV NODE_ENV=production
+
+# no HTTP server here to healthcheck against (worker is a pure BullMQ
+# consumer) - the plan's original healthz/readyz-on-both-services idea would
+# need a small dedicated HTTP listener added to worker.js; noted as a
+# known limitation rather than bolted on here under time pressure
+
+# named volumes get root ownership by default unless the mount point already
+# exists (with the right owner) in the image beforehand
+RUN mkdir -p /app/uploads /app/.cache/models && chown -R node:node /app/uploads /app/.cache/models
+
+USER node
+
+CMD ["node", "src/worker.js"]
