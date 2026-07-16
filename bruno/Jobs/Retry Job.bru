@@ -1,0 +1,11 @@
+meta {
+  name: Retry Job
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/jobs/{{job_id}}/retry
+  body: none
+  auth: none
+}

@@ -1,0 +1,17 @@
+meta {
+  name: List Notifications
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/notifications?page=1&limit=10
+  body: none
+  auth: none
+}
+
+script:post-response {
+  if (res.body?.result?.notifications?.[0]?.id) {
+    bru.setVar("notification_id", res.body.result.notifications[0].id);
+  }
+}
