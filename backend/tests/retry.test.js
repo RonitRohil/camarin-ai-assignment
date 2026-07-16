@@ -21,6 +21,9 @@ stubModule("../src/config/env", {
     REDIS_URL: "redis://localhost:6379",
     GOOGLE_VISION_API_KEY: "test-vision-key",
     MODEL_CACHE_DIR: "./.cache/models",
+    CAPTION_DRIVER: "local",
+    HF_ACCESS_TOKEN: "test-hf-token",
+    COMBINED_MODE: false,
 });
 
 const mock_prisma = {
