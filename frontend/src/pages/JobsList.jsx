@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { listJobs, uploadJob } from "../api/jobs.api";
 import JobStatusBadge from "../components/JobStatusBadge";
 import usePolling from "../hooks/usePolling";
+import { formatDateTime, formatFileSize } from "../utils/format";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
@@ -119,9 +120,20 @@ const JobsList = () => {
                 {jobs.map((job) => (
                     <li key={job.id} className={job.result?.flagged ? "job-row job-row--flagged" : "job-row"}>
                         <Link to={`/jobs/${job.id}`}>
-                            <span className="job-filename">{job.filename}</span>
-                            <JobStatusBadge status={job.status} />
-                            {job.result?.flagged ? <span className="job-flagged-tag">Flagged</span> : null}
+                            <div className="job-row-top">
+                                <span className="job-filename">{job.filename}</span>
+                                <JobStatusBadge status={job.status} />
+                                {job.result?.flagged ? <span className="job-flagged-tag">Flagged</span> : null}
+                            </div>
+                            <div className="job-row-meta">
+                                <span>{job.mime_type}</span>
+                                <span>{formatFileSize(job.size_bytes)}</span>
+                                <span>Uploaded {formatDateTime(job.created_at)}</span>
+                                {job.attempts > 0 ? <span>{job.attempts} attempt{job.attempts === 1 ? "" : "s"}</span> : null}
+                            </div>
+                            {job.status === "failed" && job.error ? (
+                                <p className="job-row-error">{job.error}</p>
+                            ) : null}
                         </Link>
                     </li>
                 ))}

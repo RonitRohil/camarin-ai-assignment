@@ -14,14 +14,17 @@ const App = () => {
         <>
             {user ? (
                 <header className="app-header">
-                    <span>{user.email}</span>
-                    <button type="button" onClick={logout}>
-                        Log out
-                    </button>
+                    <span className="app-header-brand">Camarin AI</span>
+                    <span className="app-header-user">
+                        {user.email}
+                        <button type="button" onClick={logout}>
+                            Log out
+                        </button>
+                    </span>
                 </header>
             ) : null}
 
-            <main>
+            <main className="page-container">
                 <Routes>
                     <Route path="/login" element={user ? <Navigate to="/jobs" replace /> : <Login />} />
                     <Route path="/signup" element={user ? <Navigate to="/jobs" replace /> : <Signup />} />

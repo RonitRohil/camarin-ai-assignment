@@ -21,3 +21,8 @@ export const getJob = async (job_id) => {
     const { data } = await api_client.get(`/jobs/${job_id}`);
     return data.result.job;
 };
+
+export const retryJob = async (job_id) => {
+    const { data } = await api_client.post(`/jobs/${job_id}/retry`);
+    return data.result.job;
+};

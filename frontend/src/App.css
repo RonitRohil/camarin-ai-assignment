@@ -1,25 +1,53 @@
-main {
+.page-container {
   flex: 1;
-  padding: 32px 24px;
-  text-align: left;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 28px 24px 48px;
+  box-sizing: border-box;
 }
 
 .app-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
+  padding: 14px 24px;
   border-bottom: 1px solid var(--border);
 }
 
-.app-header button {
+.app-header-brand {
+  font-weight: 600;
+  color: var(--text-h);
+  font-size: 15px;
+}
+
+.app-header-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.app-header button,
+.job-detail-status-row button {
   font: inherit;
+  font-size: 13px;
   padding: 6px 14px;
   border-radius: 6px;
   border: 1px solid var(--border);
-  background: transparent;
+  background: var(--bg);
   color: var(--text-h);
   cursor: pointer;
+}
+
+.app-header button:hover,
+.job-detail-status-row button:hover {
+  border-color: var(--accent-border);
+}
+
+.job-detail-status-row button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* --- auth forms --- */
@@ -27,7 +55,7 @@ main {
 .auth-page {
   display: flex;
   justify-content: center;
-  padding-top: 40px;
+  padding-top: 48px;
 }
 
 .auth-form {
@@ -35,11 +63,11 @@ main {
   flex-direction: column;
   gap: 10px;
   width: 100%;
-  max-width: 360px;
+  max-width: 340px;
 }
 
 .auth-form label {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text);
 }
 
@@ -47,6 +75,7 @@ main {
 .upload-form input,
 .jobs-list-header select {
   font: inherit;
+  font-size: 14px;
   padding: 8px 10px;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -57,7 +86,8 @@ main {
 .auth-form button,
 .upload-form button {
   font: inherit;
-  padding: 10px 14px;
+  font-size: 14px;
+  padding: 9px 14px;
   border-radius: 6px;
   border: none;
   background: var(--accent);
@@ -72,9 +102,13 @@ main {
   cursor: not-allowed;
 }
 
+.auth-form p {
+  font-size: 13px;
+}
+
 .form-error {
-  color: #e5484d;
-  font-size: 14px;
+  color: #c0293c;
+  font-size: 13px;
 }
 
 /* --- jobs list --- */
@@ -89,6 +123,11 @@ main {
   border-bottom: 1px solid var(--border);
 }
 
+.upload-form label {
+  font-size: 13px;
+  color: var(--text);
+}
+
 .jobs-list-header {
   display: flex;
   justify-content: space-between;
@@ -96,9 +135,14 @@ main {
   margin-bottom: 16px;
 }
 
+.jobs-list-header h2 {
+  margin: 0;
+}
+
 .jobs-list {
   list-style: none;
   padding: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -106,8 +150,8 @@ main {
 
 .job-row a {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 4px;
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -115,9 +159,20 @@ main {
   color: var(--text-h);
 }
 
+.job-row a:hover {
+  border-color: var(--accent-border);
+  background: var(--bg-subtle);
+}
+
 .job-row--flagged a {
-  border-color: #e5484d;
-  background: rgba(229, 72, 77, 0.08);
+  border-color: #d33a4c;
+  background: rgba(211, 58, 76, 0.06);
+}
+
+.job-row-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .job-filename {
@@ -125,26 +180,45 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.job-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.job-row-error {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #c0293c;
 }
 
 .job-flagged-tag {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: #e5484d;
+  color: #c0293c;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .job-status-badge {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 999px;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
 }
 
 .job-status-badge--pending {
-  background: var(--code-bg);
+  background: var(--bg-subtle);
   color: var(--text);
+  border: 1px solid var(--border);
 }
 
 .job-status-badge--processing {
@@ -153,42 +227,90 @@ main {
 }
 
 .job-status-badge--completed {
-  background: rgba(48, 164, 108, 0.15);
-  color: #30a46c;
+  background: rgba(24, 138, 84, 0.12);
+  color: #188a54;
 }
 
 .job-status-badge--failed {
-  background: rgba(229, 72, 77, 0.15);
-  color: #e5484d;
+  background: rgba(192, 41, 60, 0.1);
+  color: #c0293c;
 }
 
 /* --- job detail --- */
 
-.job-detail-page {
+.back-link {
+  display: inline-block;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.job-detail-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 640px) {
+  .job-detail-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.job-detail-image img {
+  display: block;
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+
+.job-detail-image-placeholder {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 640px;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  color: var(--text);
+  font-size: 13px;
+  text-align: center;
+  padding: 12px;
+}
+
+.job-detail-info h1 {
+  word-break: break-word;
+}
+
+.job-detail-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.job-detail-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
 }
 
 .flagged-banner {
   padding: 10px 14px;
   border-radius: 8px;
-  background: rgba(229, 72, 77, 0.12);
-  color: #e5484d;
-  border: 1px solid rgba(229, 72, 77, 0.4);
-}
-
-.retry-note {
-  font-size: 14px;
-  color: var(--text);
+  background: rgba(192, 41, 60, 0.08);
+  color: #c0293c;
+  border: 1px solid rgba(192, 41, 60, 0.3);
+  font-size: 13px;
+  margin: 10px 0;
 }
 
 .job-meta {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 4px 16px;
-  font-size: 14px;
+  font-size: 13px;
+  margin-top: 14px;
 }
 
 .job-meta dt {
@@ -202,6 +324,7 @@ main {
 
 .labels-list {
   padding-left: 20px;
+  font-size: 14px;
 }
 
 .safe-search-list {

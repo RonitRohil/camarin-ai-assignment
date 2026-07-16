@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { getJob } from "../api/jobs.api";
+import { getJob, retryJob } from "../api/jobs.api";
 import JobStatusBadge from "../components/JobStatusBadge";
 import FlaggedBanner from "../components/FlaggedBanner";
 import usePolling from "../hooks/usePolling";
+import { formatDateTime, formatFileSize, resolveImageUrl } from "../utils/format";
 
 const IN_FLIGHT_STATUSES = ["pending", "processing"];
 
@@ -12,6 +13,8 @@ const JobDetail = () => {
     const [job, setJob] = useState(null);
     const [error, setError] = useState("");
     const [is_loading, setIsLoading] = useState(true);
+    const [is_retrying, setIsRetrying] = useState(false);
+    const [retry_error, setRetryError] = useState("");
 
     const fetchJob = useCallback(async () => {
         setIsLoading(true);
@@ -38,6 +41,19 @@ const JobDetail = () => {
         }
     }, 5000);
 
+    const handleRetry = async () => {
+        setIsRetrying(true);
+        setRetryError("");
+        try {
+            const retried_job = await retryJob(id);
+            setJob(retried_job);
+        } catch (err) {
+            setRetryError(err.response?.data?.message || "Retry failed");
+        } finally {
+            setIsRetrying(false);
+        }
+    };
+
     if (is_loading) {
         return <p>Loading job...</p>;
     }
@@ -51,44 +67,65 @@ const JobDetail = () => {
     }
 
     const result = job.result;
+    const image_src = resolveImageUrl(job.image_url);
 
     return (
         <div className="job-detail-page">
-            <Link to="/jobs">&larr; Back to jobs</Link>
+            <Link to="/jobs" className="back-link">
+                &larr; Back to jobs
+            </Link>
 
-            <h1>{job.filename}</h1>
-            <JobStatusBadge status={job.status} />
+            <div className="job-detail-layout">
+                <div className="job-detail-image">
+                    {image_src ? (
+                        <img src={image_src} alt={job.filename} />
+                    ) : (
+                        <div className="job-detail-image-placeholder">No preview available</div>
+                    )}
+                </div>
 
-            {result?.flagged ? <FlaggedBanner category={result.flagged_category} /> : null}
+                <div className="job-detail-info">
+                    <h1>{job.filename}</h1>
 
-            {job.status === "failed" && job.error ? <p className="form-error">Error: {job.error}</p> : null}
+                    <div className="job-detail-status-row">
+                        <JobStatusBadge status={job.status} />
+                        {job.status === "failed" ? (
+                            <button type="button" onClick={handleRetry} disabled={is_retrying}>
+                                {is_retrying ? "Retrying..." : "Retry"}
+                            </button>
+                        ) : null}
+                    </div>
 
-            {job.status === "failed" ? (
-                <p className="retry-note">
-                    Retry isn't wired up yet — the backend's <code>POST /jobs/:id/retry</code> endpoint is still being built.
-                </p>
-            ) : null}
+                    {retry_error ? <p className="form-error">{retry_error}</p> : null}
 
-            <dl className="job-meta">
-                <dt>Uploaded</dt>
-                <dd>{new Date(job.created_at).toLocaleString()}</dd>
-                <dt>Size</dt>
-                <dd>{(job.size_bytes / 1024).toFixed(1)} KB</dd>
-                <dt>Type</dt>
-                <dd>{job.mime_type}</dd>
-                <dt>Attempts</dt>
-                <dd>{job.attempts}</dd>
-            </dl>
+                    {result?.flagged ? <FlaggedBanner category={result.flagged_category} /> : null}
+
+                    {job.status === "failed" && job.error ? (
+                        <p className="form-error">Error: {job.error}</p>
+                    ) : null}
+
+                    <dl className="job-meta">
+                        <dt>Uploaded</dt>
+                        <dd>{formatDateTime(job.created_at)}</dd>
+                        <dt>Size</dt>
+                        <dd>{formatFileSize(job.size_bytes)}</dd>
+                        <dt>Type</dt>
+                        <dd>{job.mime_type}</dd>
+                        <dt>Attempts</dt>
+                        <dd>{job.attempts}</dd>
+                    </dl>
+                </div>
+            </div>
 
             {result?.caption ? (
-                <section>
+                <section className="job-detail-section">
                     <h2>Caption</h2>
                     <p>{result.caption}</p>
                 </section>
             ) : null}
 
             {result?.labels?.length ? (
-                <section>
+                <section className="job-detail-section">
                     <h2>Labels</h2>
                     <ul className="labels-list">
                         {result.labels.map((label) => (
@@ -101,7 +138,7 @@ const JobDetail = () => {
             ) : null}
 
             {result?.safe_search ? (
-                <section>
+                <section className="job-detail-section">
                     <h2>Safety classification</h2>
                     <dl className="safe-search-list">
                         {Object.entries(result.safe_search).map(([category, likelihood]) => (
