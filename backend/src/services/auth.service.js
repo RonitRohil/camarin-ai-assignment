@@ -88,7 +88,7 @@ exports.refresh = async (data) => {
 
     try {
         decoded = verifyRefreshToken(refresh_token);
-    } catch (err) {
+    } catch {
         throw new ApiError(
             STATUS_CODES.UNAUTHORIZED,
             "Invalid or expired refresh token"
@@ -111,7 +111,7 @@ exports.refresh = async (data) => {
     };
 };
 
-exports.logout = async (data) => {
+exports.logout = async () => {
     // stateless JWT, no server-side session to invalidate -
     // the controller clears the httpOnly cookies, nothing to persist here
 };

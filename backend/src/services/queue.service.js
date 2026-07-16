@@ -1,6 +1,7 @@
 const { Queue } = require("bullmq");
 const IORedis = require("ioredis");
 const env = require("../config/env");
+const logger = require("../utils/logger");
 const {
     QUEUE_NAME,
     JOB_NAME,
@@ -28,6 +29,8 @@ const enqueueJob = async (job_id) => {
             removeOnFail: false,
         }
     );
+
+    logger.info({ job_id }, "job enqueued");
 };
 
 // re-queues an existing (already failed) BullMQ job via its own retry() API,
@@ -38,14 +41,24 @@ const retryJob = async (job_id) => {
     const bull_job = await image_processing_queue.getJob(job_id);
 
     if (bull_job) {
-        await bull_job.retry();
+        // job.retry() on an attempts-exhausted job fails it immediately unless
+        // BullMQ's own attemptsMade counter is reset too - the Postgres attempts
+        // column is a separate counter and resetting only that isn't enough
+        await bull_job.retry({ resetAttemptsMade: true });
+        logger.info({ job_id }, "job re-enqueued via retry()");
     } else {
         await enqueueJob(job_id);
     }
+};
+
+const checkRedisConnection = async () => {
+    const result = await connection.ping();
+    return result === "PONG";
 };
 
 module.exports = {
     image_processing_queue,
     enqueueJob,
     retryJob,
+    checkRedisConnection,
 };

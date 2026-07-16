@@ -13,7 +13,7 @@ const authMiddleware = (req, res, next) => {
         const decoded = verifyAccessToken(access_token);
         req.user_id = decoded.user_id;
         next();
-    } catch (err) {
+    } catch {
         return next(new ApiError(STATUS_CODES.UNAUTHORIZED, "Invalid or expired access token"));
     }
 };

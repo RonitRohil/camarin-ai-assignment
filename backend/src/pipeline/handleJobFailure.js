@@ -11,11 +11,17 @@ const JOB_STATUS = require("../constants/jobStatus");
 // mock BullMQ's Worker class itself.
 const handleJobFailure = async (job, err) => {
     if (!job) {
-        logger.error(`job failed with no job reference: ${err.message}`);
+        logger.error({ err }, "job failed with no job reference");
         return;
     }
 
-    logger.error(`job ${job.data.job_id} attempt failed: ${err.message}`);
+    const job_id = job.data.job_id;
+    const job_logger = logger.child({ job_id });
+
+    job_logger.error(
+        { err, attempts_made: job.attemptsMade, max_attempts: job.opts.attempts },
+        "job attempt failed"
+    );
 
     if (job.attemptsMade < job.opts.attempts) {
         return;
@@ -23,9 +29,11 @@ const handleJobFailure = async (job, err) => {
 
     try {
         const updated_job = await prisma_client.job.update({
-            where: { id: job.data.job_id },
+            where: { id: job_id },
             data: { status: JOB_STATUS.FAILED, error: err.message },
         });
+
+        job_logger.error("retries exhausted, job marked failed");
 
         await sse_service.publishJobUpdate(updated_job.user_id, {
             job_id: updated_job.id,
@@ -33,9 +41,7 @@ const handleJobFailure = async (job, err) => {
             error: err.message,
         });
     } catch (update_err) {
-        logger.error(
-            `failed to mark job ${job.data.job_id} as failed after exhausted retries: ${update_err.message}`
-        );
+        job_logger.error({ err: update_err }, "failed to mark job as failed after exhausted retries");
     }
 };
 

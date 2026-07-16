@@ -68,7 +68,12 @@ All responses: `{ success, status_code, message, result }`. Every endpoint excep
 | POST | `/notifications/:id/read` | |
 | GET | `/health`, `/ready` | |
 
-Full request/response examples: [`bruno/`](../bruno) — open in the Bruno desktop app, or import the Postman-compatible export.
+Full request/response examples: [`bruno/`](../bruno) — open in the Bruno desktop app, or import `CamarinAI.postman_collection.json` (repo root) into Postman/Insomnia.
+
+An OpenAPI 3.0 spec also exists at [`backend/openapi.yaml`](./openapi.yaml). To view it as interactive docs, any of:
+- Paste its contents into [editor.swagger.io](https://editor.swagger.io) — renders live, no install.
+- `npx @redocly/cli build-docs backend/openapi.yaml -o api-docs.html` then open `api-docs.html` in a browser — verified working, produces a self-contained static Redoc page.
+- The "OpenAPI (Swagger) Editor" VS Code extension, for inline validation while editing the spec itself.
 
 ## Setup
 
@@ -135,20 +140,42 @@ Needs a reachable Postgres and Redis (docker-compose can supply just those: `doc
 npm test
 ```
 
-19 unit tests (`vitest`) across `tests/pipeline.test.js` (caption/vision stage functions, mocked HF/Vision clients) and `tests/retry.test.js` (checkpoint/resume logic across every combination of already-checkpointed stages, permanent-vs-transient error handling, the worker-level exhausted-retries safety net, and the actual BullMQ backoff config values) — the explicit minimum bar per the assignment's evaluation criteria, not a bonus.
+22 unit tests (`vitest`) across `tests/pipeline.test.js` (caption/vision stage functions, mocked HF/Vision clients) and `tests/retry.test.js` (checkpoint/resume logic across every combination of already-checkpointed stages, permanent-vs-transient error handling, the worker-level exhausted-retries safety net, and the actual BullMQ backoff config values) — the explicit minimum bar per the assignment's evaluation criteria, not a bonus. Fully self-contained: no real `DATABASE_URL`/`REDIS_URL`/API keys needed (confirmed by running the full suite with `.env` removed), CI runs it with no service containers or secrets.
 
 `vi.mock()` doesn't intercept `require()` in this CommonJS setup (confirmed via an isolated repro — it only reaches ESM `import`, never a nested `require()` at any depth). Mocking here uses manual `require.cache` substitution instead.
 
+`npm run lint` (ESLint, flat config) runs clean. Both run automatically on every push/PR to `main` via [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) — install → lint → `prisma generate` → test for the backend, install → lint → build for the frontend. No secrets or service containers needed for either job.
+
 ## Scalability under 10x load
 
-The real bottleneck is the free-tier AI APIs, not this service's own infrastructure. More worker replicas don't help until rate-limiting/backpressure is added per-provider — that's the single most important thing to get right before scaling workers out. Once that's in place, horizontal worker scaling is a replica-count change away (BullMQ needs no coordination between consumers on the same queue) — the code is already written so this doesn't require a rewrite. The API layer is already stateless (state lives in Redis pub/sub, not in-process), so it scales the same way. At real volume, Postgres would need connection pooling (PgBouncer) and the `jobs` table would benefit from time-based partitioning; Redis becomes a single point of failure at scale, mitigated by using a managed/clustered provider and leaning on the fact that job processing is already idempotent (the checkpoint mechanism above), so a failover-triggered redelivery is safe.
+Switching captioning from a hosted API to a self-hosted in-process model changes the bottleneck story from the original plan. Captioning no longer has an external rate limit at all — the bottleneck is now our own compute/memory, not a third-party quota.
+
+**Worker concurrency (`WORKER_CONCURRENCY` in `worker.js`) is set to 2, backed by measurement, not left as an unverified guess:**
+- Google Vision is *not* the binding constraint. Its default quota is ~1800 requests/min; even at concurrency=10, worst case is ~300-600 req/min — comfortably under 20-30% of quota.
+- The self-hosted caption model's *correctness* under concurrency was directly tested, not assumed: 15 concurrent `generateCaption` calls across 5 rounds, using visually distinct images, all cross-checked against a sequential baseline — zero cross-contamination.
+- But elapsed time for 3 concurrent calls (~4.6s) was roughly what 3 *sequential* calls take, indicating the ONNX runtime doesn't meaningfully parallelize CPU inference within one process — so raising concurrency doesn't buy much raw caption throughput.
+- What it does buy, and what concurrency=2 is actually for: overlapping one job's I/O-bound Vision network call with another job's CPU-bound captioning, instead of the event loop sitting idle on the round trip. Verified live with a real worker + real queue: two jobs enqueued together, job B measurably started (+16ms) while job A was still mid-pipeline (finished at +6548ms) — genuine concurrent processing, both completed with correct, distinct results.
+- Kept modest (2, not the verified-safe-to-3 ceiling) because the benefit is I/O overlap, not parallel speedup, and memory rises with it (~735MB at concurrency=1 → ~890MB at concurrency=3, measured).
+
+Concrete next steps (not built, per the spec's "articulate, don't necessarily solve"):
+- Horizontally scale worker *replicas* for real throughput gains (each replica loads its own model copy — trades memory for throughput; in-process concurrency alone doesn't scale CPU-bound inference).
+- Alternatively, extract captioning into its own always-warm inference service that workers call over the network, decoupling "how many pipeline workers" from "how many copies of the model" at the cost of a network hop per caption.
+- Horizontal worker scaling is a replica-count change away regardless (BullMQ needs no coordination between consumers on the same queue) — the code doesn't need a rewrite. The API layer is already stateless (state lives in Redis pub/sub, not in-process), so it scales the same way.
+- At real volume, Postgres would need connection pooling (PgBouncer) and the `jobs` table would benefit from time-based partitioning; Redis becomes a single point of failure at scale, mitigated by a managed/clustered provider and the fact that job processing is already idempotent (the checkpoint mechanism above), so a failover-triggered redelivery is safe.
+
+## Observability
+
+Structured JSON logging (`pino`) throughout, not just at the edges:
+- `pino-http` on every API request (trimmed serializers - method/url/status only, not the full header dump pino-http defaults to).
+- Every pipeline log line is scoped with `job_id` via a child logger (`logger.child({ job_id })` in `runPipeline.js`), so one job's full lifecycle - created (`job.service.js`) → enqueued (`queue.service.js`) → picked up → each stage starting/done → completed or failed (`runPipeline.js`, `handleJobFailure.js`) - is traceable as a single filtered stream (`grep '"job_id":"<id>"'` over the logs, or the equivalent query in a real log aggregator).
+
+`GET /ready` actually checks dependencies now (`SELECT 1` against Postgres, `PING` against Redis) rather than returning `200` unconditionally - verified both the healthy path and a genuine failure path (deliberately unreachable DB → real `503`).
 
 ## Known limitations
 
 - **Not yet deployed.**
 - Self-hosted caption model doesn't fit a 512MB free-tier RAM budget even quantized — see the captioning section above.
-- Worker has no HTTP health endpoint (no HTTP server exists in `worker.js` to check against) — the original "healthz/readyz on both services" idea would need a small dedicated listener added.
+- Worker has no HTTP health endpoint (no HTTP server exists in `worker.js` to check against) — the original "healthz/readyz on both services" idea would need a small dedicated listener added. (`GET /ready` on the API does now do a real dependency check, see Observability above.)
 - `/uploads` (local storage driver) is served unauthenticated via `express.static` — storage keys are unguessable UUIDs, but this isn't hardened access control.
-- No GitHub Actions CI yet. No OpenAPI spec (Bruno collection instead, per the spec's own "Bruno or OpenAPI" wording).
-- Worker concurrency is hardcoded to 1 — concurrent inference calls against the self-hosted model singleton are unverified, and rate-limit-aware concurrency (per the scalability section above) isn't implemented yet.
 - No `/auth/me` endpoint — the frontend works around this by caching the sanitized user object client-side after login/signup.
+- `express-rate-limit` is installed and applied to `/auth/signup` and `/auth/login`, but not yet to the upload or retry endpoints.

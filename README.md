@@ -50,6 +50,7 @@ Frontend: `http://localhost:5173` · API: `http://localhost:5002`
 
 - Not yet deployed to a public URL.
 - The self-hosted caption model doesn't fit a 512MB free-tier RAM budget even quantized — the deployment story for this specific piece is still an open decision (options documented in `backend/README.md`).
-- No GitHub Actions CI yet; no OpenAPI spec (Bruno collection instead, per the spec's own "Bruno or OpenAPI" wording).
+- Worker container has no HTTP health endpoint (`GET /ready` on the API does do a real Postgres/Redis check, just not the worker).
+- No `/auth/me` endpoint yet — the frontend works around this client-side.
 
-Full list, with reasoning, in `backend/README.md` and `frontend/README.md`.
+CI (`.github/workflows/ci.yml`, lint + test on every push/PR to `main`), structured per-request and per-job logging, and an OpenAPI 3.0 spec (`backend/openapi.yaml`) alongside the Bruno collection are all in place. Full list, with reasoning, in `backend/README.md` and `frontend/README.md`.

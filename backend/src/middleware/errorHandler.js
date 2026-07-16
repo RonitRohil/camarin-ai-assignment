@@ -2,7 +2,9 @@ const env = require("../config/env");
 const STATUS_CODES = require("../constants/statusCodes");
 const logger = require("../utils/logger");
 
-const errorHandler = (err, req, res, next) => {
+// Express recognizes error-handling middleware by argument count (4), so
+// _next has to stay in the signature even though it's never called
+const errorHandler = (err, req, res, _next) => {
     logger.error(err);
 
     const status_code = err.status_code || STATUS_CODES.INTERNAL_SERVER_ERROR;

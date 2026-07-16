@@ -9,6 +9,7 @@
     "start": "node src/index.js",
     "start:worker": "node src/worker.js",
     "test": "vitest run",
+    "lint": "eslint .",
     "prisma:migrate": "prisma migrate dev",
     "prisma:generate": "prisma generate",
     "seed": "node prisma/seed.js"
@@ -29,6 +30,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "file-type": "^22.0.1",
     "helmet": "^8.3.0",
     "ioredis": "^5.11.1",

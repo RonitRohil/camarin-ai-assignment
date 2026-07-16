@@ -2,7 +2,9 @@ const fs = require("fs/promises");
 const path = require("path");
 const env = require("../../config/env");
 
-const putObject = async (storage_key, buffer, mime_type) => {
+// mime_type is unused here (disk writes don't need a content-type), kept only
+// so both storage drivers share the exact same call signature
+const putObject = async (storage_key, buffer, _mime_type) => {
     const file_path = path.resolve(env.LOCAL_STORAGE_DIR, storage_key);
     await fs.mkdir(path.dirname(file_path), { recursive: true });
     await fs.writeFile(file_path, buffer);

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 
 const DEFAULT_INTERVAL_MS = 5000;
 
-// GET /jobs/stream (SSE, per ADR-5) isn't built on the backend yet - this is the
-// documented polling fallback in the meantime, swap for useJobStream once it lands
+// documented fallback for when SSE (useJobStream, per ADR-5) is unavailable
+// or drops - callers use useJobStream as primary and this as backup
 const usePolling = (callback, interval_ms = DEFAULT_INTERVAL_MS) => {
     const callback_ref = useRef(callback);
 

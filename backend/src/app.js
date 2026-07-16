@@ -2,9 +2,13 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const cookie_parser = require("cookie-parser");
+const pino_http = require("pino-http");
 const env = require("./config/env");
 const STATUS_CODES = require("./constants/statusCodes");
 const error_handler = require("./middleware/errorHandler");
+const logger = require("./utils/logger");
+const prisma_client = require("./utils/prismaClient");
+const { checkRedisConnection } = require("./services/queue.service");
 const auth_router = require("./routers/auth.router");
 const job_router = require("./routers/job.router");
 const notification_router = require("./routers/notification.router");
@@ -12,6 +16,21 @@ const notification_router = require("./routers/notification.router");
 const app = express();
 
 app.use(helmet());
+
+// structured, per-request logging (auto-generates a req.id) - shares the same
+// pino instance/transport as everything else, so a request's log lines and a
+// job's log lines (see pipeline/runPipeline.js) end up in the same stream.
+// Trimmed serializers - pino-http's defaults dump the full req/res objects
+// (every response header, including the whole CSP string) on every line
+app.use(
+    pino_http({
+        logger,
+        serializers: {
+            req: (req) => ({ id: req.id, method: req.method, url: req.url }),
+            res: (res) => ({ status_code: res.statusCode }),
+        },
+    })
+);
 
 app.use(
     cors({
@@ -50,13 +69,32 @@ app.get("/health", (req, res) => {
     });
 });
 
-app.get("/ready", (req, res) => {
-    res.status(STATUS_CODES.OK).json({
-        success: true,
-        status_code: STATUS_CODES.OK,
-        message: "ok",
-        result: {},
-    });
+app.get("/ready", async (req, res) => {
+    try {
+        await prisma_client.$queryRaw`SELECT 1`;
+
+        const redis_ok = await checkRedisConnection();
+        if (!redis_ok) {
+            throw new Error("Redis ping did not return PONG");
+        }
+
+        res.status(STATUS_CODES.OK).json({
+            success: true,
+            status_code: STATUS_CODES.OK,
+            message: "ready",
+            result: {},
+        });
+    }
+
+    catch (err) {
+        logger.error({ err }, "readiness check failed");
+        res.status(STATUS_CODES.SERVICE_UNAVAILABLE).json({
+            success: false,
+            status_code: STATUS_CODES.SERVICE_UNAVAILABLE,
+            message: "not ready",
+            result: {},
+        });
+    }
 });
 
 app.use("/auth", auth_router);

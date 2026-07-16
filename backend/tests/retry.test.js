@@ -33,10 +33,17 @@ const mock_generate_caption = vi.fn();
 const mock_analyze_image = vi.fn();
 const mock_publish_job_update = vi.fn();
 
+// real logic, not a hand-set mock - mirrors vision.pipeline.js's own isFlagged
+// exactly, so it stays consistent with whatever safe_search each test's
+// analyzeImage mock returns, rather than needing separate bookkeeping
+const FLAGGED_LIKELIHOODS = ["LIKELY", "VERY_LIKELY"];
+const isFlagged = (safe_search) =>
+    Object.values(safe_search || {}).some((likelihood) => FLAGGED_LIKELIHOODS.includes(likelihood));
+
 stubModule("../src/utils/prismaClient", mock_prisma);
 stubModule("../src/services/storage", mock_storage);
 stubModule("../src/pipeline/caption.pipeline", { generateCaption: mock_generate_caption });
-stubModule("../src/pipeline/vision.pipeline", { analyzeImage: mock_analyze_image });
+stubModule("../src/pipeline/vision.pipeline", { analyzeImage: mock_analyze_image, isFlagged });
 stubModule("../src/services/sse.service", { publishJobUpdate: mock_publish_job_update });
 
 const runPipeline = require("../src/pipeline/runPipeline");
@@ -77,6 +84,9 @@ describe("runPipeline - checkpoint/resume logic", () => {
         expect(mock_prisma.job.update).toHaveBeenLastCalledWith(
             expect.objectContaining({ data: expect.objectContaining({ status: JOB_STATUS.COMPLETED }) })
         );
+        expect(mock_prisma.notification.create).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ type: "job_completed" }) })
+        );
     });
 
     it("resumes from checkpoint: skips caption when already persisted, only runs the remaining stage", async () => {
@@ -115,6 +125,20 @@ describe("runPipeline - checkpoint/resume logic", () => {
         );
     });
 
+    it("returns immediately without reprocessing when the job is already completed", async () => {
+        mock_prisma.job.findUnique.mockResolvedValue({
+            ...BASE_JOB,
+            status: JOB_STATUS.COMPLETED,
+            result: { caption: "done", labels: [{ description: "x" }] },
+        });
+
+        await runPipeline("job-1");
+
+        expect(mock_prisma.job.update).not.toHaveBeenCalled();
+        expect(mock_prisma.notification.create).not.toHaveBeenCalled();
+        expect(mock_publish_job_update).not.toHaveBeenCalled();
+    });
+
     it("creates a notification when the vision stage returns flagged=true", async () => {
         mock_prisma.job.findUnique.mockResolvedValue({ ...BASE_JOB, result: null });
         mock_generate_caption.mockResolvedValue("a caption");
@@ -127,6 +151,9 @@ describe("runPipeline - checkpoint/resume logic", () => {
 
         await runPipeline("job-1");
 
+        // exactly one notification (job_flagged) - a flagged completion should
+        // not also fire the separate job_completed notification
+        expect(mock_prisma.notification.create).toHaveBeenCalledTimes(1);
         expect(mock_prisma.notification.create).toHaveBeenCalledWith(
             expect.objectContaining({
                 data: expect.objectContaining({ user_id: "user-1", job_id: "job-1", type: "job_flagged" }),
@@ -134,7 +161,7 @@ describe("runPipeline - checkpoint/resume logic", () => {
         );
     });
 
-    it("does not create a notification when nothing is flagged", async () => {
+    it("creates a job_completed (not job_flagged) notification when nothing is flagged", async () => {
         mock_prisma.job.findUnique.mockResolvedValue({ ...BASE_JOB, result: null });
         mock_generate_caption.mockResolvedValue("a caption");
         mock_analyze_image.mockResolvedValue({
@@ -146,7 +173,12 @@ describe("runPipeline - checkpoint/resume logic", () => {
 
         await runPipeline("job-1");
 
-        expect(mock_prisma.notification.create).not.toHaveBeenCalled();
+        expect(mock_prisma.notification.create).toHaveBeenCalledTimes(1);
+        expect(mock_prisma.notification.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({ type: "job_completed" }),
+            })
+        );
     });
 
     it("marks the job failed WITHOUT rethrowing on a permanent error, and skips remaining stages", async () => {
@@ -160,6 +192,11 @@ describe("runPipeline - checkpoint/resume logic", () => {
         expect(findFailedUpdateCall()).toBeTruthy();
         expect(findFailedUpdateCall()[0].data.error).toBe("bad image");
         expect(mock_analyze_image).not.toHaveBeenCalled();
+        expect(mock_prisma.notification.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({ user_id: "user-1", job_id: "job-1", type: "job_failed" }),
+            })
+        );
     });
 
     it("rethrows transient errors and does NOT mark the job failed - BullMQ's backoff owns the retry", async () => {

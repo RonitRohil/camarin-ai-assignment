@@ -6,6 +6,7 @@ const queue_service = require("./queue.service");
 const JOB_STATUS = require("../constants/jobStatus");
 const STATUS_CODES = require("../constants/statusCodes");
 const ApiError = require("../utils/ApiError");
+const logger = require("../utils/logger");
 
 const buildStorageKey = (user_id, original_filename) => {
     const extension = path.extname(original_filename);
@@ -28,6 +29,8 @@ exports.createJob = async ({ user_id, file }) => {
             status: JOB_STATUS.PENDING,
         },
     });
+
+    logger.info({ job_id: job.id, user_id }, "job created");
 
     await queue_service.enqueueJob(job.id);
 
