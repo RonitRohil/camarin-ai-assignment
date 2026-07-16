@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { listJobs, uploadJob } from "../api/jobs.api";
 import JobStatusBadge from "../components/JobStatusBadge";
 import usePolling from "../hooks/usePolling";
+import useJobStream from "../hooks/useJobStream";
 import { formatDateTime, formatFileSize } from "../utils/format";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -36,13 +37,17 @@ const JobsList = () => {
         fetchJobs();
     }, [fetchJobs]);
 
-    // only bother polling while something could still change
+    // SSE (ADR-5) drives near-instant updates on any of this user's job status changes
+    useJobStream(() => fetchJobs());
+
+    // documented fallback for browsers without EventSource, or if the SSE connection
+    // drops silently - only bothers polling while something could still change
     usePolling(() => {
         const has_in_flight_job = jobs.some((job) => job.status === "pending" || job.status === "processing");
         if (has_in_flight_job) {
             fetchJobs();
         }
-    }, 5000);
+    }, 15000);
 
     const handleFileChange = (event) => {
         const file = event.target.files?.[0];

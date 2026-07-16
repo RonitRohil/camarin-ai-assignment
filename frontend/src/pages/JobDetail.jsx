@@ -4,6 +4,7 @@ import { getJob, retryJob } from "../api/jobs.api";
 import JobStatusBadge from "../components/JobStatusBadge";
 import FlaggedBanner from "../components/FlaggedBanner";
 import usePolling from "../hooks/usePolling";
+import useJobStream from "../hooks/useJobStream";
 import { formatDateTime, formatFileSize, resolveImageUrl } from "../utils/format";
 
 const IN_FLIGHT_STATUSES = ["pending", "processing"];
@@ -16,8 +17,12 @@ const JobDetail = () => {
     const [is_retrying, setIsRetrying] = useState(false);
     const [retry_error, setRetryError] = useState("");
 
-    const fetchJob = useCallback(async () => {
-        setIsLoading(true);
+    // background refreshes (poll/SSE) shouldn't blank the page - only the
+    // initial mount fetch flips is_loading
+    const fetchJob = useCallback(async ({ silent = false } = {}) => {
+        if (!silent) {
+            setIsLoading(true);
+        }
         try {
             const fetched_job = await getJob(id);
             setJob(fetched_job);
@@ -35,11 +40,19 @@ const JobDetail = () => {
         fetchJob();
     }, [fetchJob]);
 
+    // SSE (ADR-5) - only refetch when the update is actually about this job
+    useJobStream((update) => {
+        if (update?.job_id === id) {
+            fetchJob({ silent: true });
+        }
+    });
+
+    // documented fallback for browsers without EventSource, or if the SSE connection drops silently
     usePolling(() => {
         if (job && IN_FLIGHT_STATUSES.includes(job.status)) {
-            fetchJob();
+            fetchJob({ silent: true });
         }
-    }, 5000);
+    }, 15000);
 
     const handleRetry = async () => {
         setIsRetrying(true);
