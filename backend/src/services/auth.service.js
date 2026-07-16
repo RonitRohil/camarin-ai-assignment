@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const prisma_client = require("../utils/prismaClient");
 const env = require("../config/env");
 const STATUS_CODES = require("../constants/statusCodes");
@@ -13,10 +14,25 @@ const {
 
 const BCRYPT_SALT_ROUNDS = 12;
 
-const buildAuthTokens = (user_id) => ({
-    access_token: signAccessToken({ user_id }),
-    refresh_token: signRefreshToken({ user_id }),
-});
+const hashToken = (token) =>
+    crypto.createHash("sha256").update(token).digest("hex");
+
+const buildAuthTokens = async (client, user_id, meta = {}) => {
+    const access_token = signAccessToken({ user_id });
+    const refresh_token = signRefreshToken({ user_id });
+
+    await client.refresh_token.create({
+        data: {
+            user_id,
+            token_hash: hashToken(refresh_token),
+            expires_at: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
+            user_agent: meta.user_agent,
+            ip: meta.ip,
+        },
+    });
+
+    return { access_token, refresh_token };
+};
 
 const sanitizeUser = (user) => ({
     id: user.id,
@@ -38,7 +54,7 @@ exports.getRefreshTokenCookieOptions = () =>
     getCookieOptions(REFRESH_TOKEN_MAX_AGE_MS);
 
 exports.register = async (data) => {
-    const { email, password } = data;
+    const { email, password, user_agent, ip } = data;
 
     const existing_user = await prisma_client.user.findUnique({
         where: { email },
@@ -50,18 +66,24 @@ exports.register = async (data) => {
 
     const password_hash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
 
-    const user = await prisma_client.user.create({
-        data: { email, password_hash },
+    const { user, tokens } = await prisma_client.$transaction(async (tx) => {
+        const user = await tx.user.create({
+            data: { email, password_hash },
+        });
+
+        const tokens = await buildAuthTokens(tx, user.id, { user_agent, ip });
+
+        return { user, tokens };
     });
 
     return {
         user: sanitizeUser(user),
-        ...buildAuthTokens(user.id),
+        ...tokens,
     };
 };
 
 exports.login = async (data) => {
-    const { email, password } = data;
+    const { email, password, user_agent, ip } = data;
 
     const user = await prisma_client.user.findUnique({ where: { email } });
 
@@ -77,12 +99,12 @@ exports.login = async (data) => {
 
     return {
         user: sanitizeUser(user),
-        ...buildAuthTokens(user.id),
+        ...(await buildAuthTokens(prisma_client, user.id, { user_agent, ip })),
     };
 };
 
 exports.refresh = async (data) => {
-    const { refresh_token } = data;
+    const { refresh_token, user_agent, ip } = data;
 
     let decoded;
 
@@ -95,23 +117,49 @@ exports.refresh = async (data) => {
         );
     }
 
-    const user = await prisma_client.user.findUnique({
-        where: { id: decoded.user_id },
+    const token_hash = hashToken(refresh_token);
+
+    return prisma_client.$transaction(async (tx) => {
+        const token_row = await tx.refresh_token.findUnique({
+            where: { token_hash },
+        });
+
+        if (!token_row || token_row.revoked_at) {
+            throw new ApiError(
+                STATUS_CODES.UNAUTHORIZED,
+                "Invalid or expired refresh token"
+            );
+        }
+
+        const user = await tx.user.findUnique({
+            where: { id: decoded.user_id },
+        });
+
+        if (!user) {
+            throw new ApiError(
+                STATUS_CODES.UNAUTHORIZED,
+                "Invalid or expired refresh token"
+            );
+        }
+
+        await tx.refresh_token.update({
+            where: { id: token_row.id },
+            data: { revoked_at: new Date() },
+        });
+
+        return buildAuthTokens(tx, user.id, { user_agent, ip });
     });
-
-    if (!user) {
-        throw new ApiError(
-            STATUS_CODES.UNAUTHORIZED,
-            "Invalid or expired refresh token"
-        );
-    }
-
-    return {
-        access_token: signAccessToken({ user_id: user.id }),
-    };
 };
 
-exports.logout = async () => {
-    // stateless JWT, no server-side session to invalidate -
-    // the controller clears the httpOnly cookies, nothing to persist here
+exports.logout = async (data) => {
+    const { refresh_token } = data;
+
+    if (!refresh_token) {
+        return;
+    }
+
+    await prisma_client.refresh_token.updateMany({
+        where: { token_hash: hashToken(refresh_token), revoked_at: null },
+        data: { revoked_at: new Date() },
+    });
 };

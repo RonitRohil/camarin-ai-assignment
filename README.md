@@ -126,6 +126,11 @@ camarin-ai-assignment/
 ```
 user(id, email unique, password_hash, created_at)
 
+refresh_token(id, user_id fk, token_hash unique, expires_at, revoked_at nullable,
+    user_agent, ip, created_at)
+    — indexed on (user_id); hash of the issued refresh JWT, never the raw
+      token, so a DB read alone can't reconstruct a usable session
+
 job(id, user_id fk, filename, storage_key, mime_type, size_bytes,
     status enum[pending|processing|completed|failed], attempts, error,
     created_at, updated_at)
@@ -147,7 +152,9 @@ notification(id, user_id fk, job_id fk, type, read, created_at)
 
 JWT access token (15min) + refresh token (7d), both delivered as `httpOnly` cookies — never touched directly by frontend JS, which limits the XSS blast radius. `secure`/`sameSite` are set based on environment (`lax`+non-secure locally over HTTP, `none`+secure in production for the cross-origin Vercel↔Render setup). Passwords are bcrypt-hashed (cost factor 12). Every endpoint except `/auth/*` and the health checks requires a valid access token; `/auth/signup` and `/auth/login` are additionally rate-limited (10 requests / 15 min / IP) as a brute-force guard. The frontend's axios client transparently catches a `401`, calls `/auth/refresh` once (de-duplicated so concurrent failed requests don't trigger a refresh stampede), and retries the original request — a logged-in session survives past the 15-minute access token TTL without the user noticing.
 
-**Current limitation:** sessions are fully stateless — there's no server-side record of an issued refresh token, so logout only clears the browser's cookies; the refresh token itself remains cryptographically valid until its natural 7-day expiry even after logout. No token-theft detection, no "log out all devices," no visibility into active sessions. This is a standard, defensible trade-off for a 48-hour scope, but it's the most concrete "what would you add for production" answer for this project — see [Known Limitations](#9-known-limitations) for the current status.
+Refresh tokens are session-backed, not purely stateless: a `refresh_tokens` table stores a SHA-256 hash of each issued token (never the raw token — same principle as `password_hash`) alongside `expires_at`, `revoked_at`, `user_agent`, and `ip`. `/auth/signup` and `/auth/login` both insert a row on success; on signup that insert shares a DB transaction with the `user` row itself, so a crash between the two can't leave a user with no session. `/auth/refresh` validates the presented token against that table — rejecting a missing or already-revoked row — then **rotates**: revokes the current row and issues a new access token *and* new refresh token in one transaction, so a captured-and-replayed old refresh token is rejected the moment the legitimate client rotates past it. `/auth/logout` revokes the row directly, so logout actually invalidates the session server-side instead of only clearing the browser's copy of the cookies.
+
+**Current limitation:** no CSRF protection yet. httpOnly cookies stop XSS-based token theft, but don't stop CSRF — a malicious cross-origin page can still ride a logged-in user's browser session on a forged state-changing request, since cookies attach automatically. See [Known Limitations](#9-known-limitations).
 
 ---
 
@@ -220,7 +227,7 @@ Unit tests (`vitest`) cover the caption/vision pipeline stage functions (mocked 
 
 ## 9. Known Limitations
 
-- **Session management is stateless-only** (Section 5) — no server-side refresh-token revocation, so logout doesn't invalidate the token itself, only the browser's copy of it.
+- **No CSRF protection** (Section 5) — auth relies on httpOnly cookies alone; there's no double-submit CSRF token or equivalent, so a state-changing request forged from another origin would still carry valid auth cookies.
 - The self-hosted caption model doesn't fit a 512MB free-tier RAM budget even quantized — worked around via `CAPTION_DRIVER=api` for the deployed instance (Section 2/6), not yet resolved for a fully-free self-hosted deployment.
 - Worker has no HTTP health endpoint of its own (`GET /ready` on the API does check real Postgres/Redis connectivity, not the worker process specifically).
 - No `/auth/me` endpoint — the frontend caches the sanitized user object client-side after login/signup as a workaround.
@@ -228,7 +235,8 @@ Unit tests (`vitest`) cover the caption/vision pipeline stage functions (mocked 
 
 ## What We'd Do With More Time
 
-- Close the session-management gap (Section 5) — revocable refresh tokens tracked server-side, so logout actually invalidates the token instead of just clearing the cookie.
+- Add CSRF protection (Section 5) — a double-submit token (non-httpOnly cookie echoed back in a custom header, verified server-side on state-changing requests) now that session revocation is already in place to build on.
+- A "log out all devices" / active-sessions UI — the `refresh_tokens` table already has everything needed (`user_id`, `user_agent`, `ip`, `revoked_at`) to list and bulk-revoke a user's other sessions; just no endpoint or UI for it yet.
 - A dedicated always-warm captioning service (Section 7) to decouple memory cost from worker replica count.
 - Kubernetes manifests with a Horizontal Pod Autoscaler on the worker deployment, scaled on BullMQ queue depth (`getJobCounts()`) rather than CPU — CPU is a poor signal here since workers spend most of their time waiting on I/O or running a fixed-cost inference call, not scaling with request complexity.
 - End-to-end tests (Playwright) checked into CI, not just run manually during development.

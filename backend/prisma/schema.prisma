@@ -20,10 +20,27 @@ model user {
   password_hash String
   created_at    DateTime @default(now())
 
-  jobs          job[]
-  notifications notification[]
+  jobs           job[]
+  notifications  notification[]
+  refresh_tokens refresh_token[]
 
   @@map("users")
+}
+
+model refresh_token {
+  id         String    @id @default(uuid()) @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @unique
+  created_at DateTime  @default(now())
+  expires_at DateTime
+  revoked_at DateTime?
+  user_agent String?
+  ip         String?
+
+  user user @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@map("refresh_tokens")
 }
 
 model job {

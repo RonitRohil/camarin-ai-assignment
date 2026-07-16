@@ -25,6 +25,10 @@ Express API + a BullMQ worker, sharing one codebase (`src/index.js` and `src/wor
 
 **No `models/` folder.** Prisma's schema + generated client *is* the model layer; queries live directly in `*.service.js` files. Model names are snake_case (`job_result`, not `JobResult`) to match this project's naming convention all the way into the ORM — confirmed the generated client delegate mirrors it exactly (`prisma.job_result.findMany()`).
 
+**Refresh tokens are session-backed, not purely stateless.** A `refresh_tokens` table (`user_id` fk, `token_hash`, `expires_at`, `revoked_at`, `user_agent`, `ip`) stores a SHA-256 hash of each issued refresh token — never the raw token, same principle as `password_hash`. `/auth/signup` and `/auth/login` insert a row (in the same DB transaction as the `user` insert on signup, so a crash between the two can't leave a user with no session). `/auth/refresh` looks the token up by hash, rejects if the row is missing or already `revoked_at`, then **rotates**: revokes that row and issues a new access token *and* new refresh token (new row) in one transaction — so a stolen-and-replayed old refresh token is rejected outright once the legitimate client has rotated past it. `/auth/logout` sets `revoked_at` on the current row, so logout actually invalidates the session server-side instead of just clearing cookies client-side.
+
+**Known gap: no CSRF protection yet.** Auth cookies are httpOnly (safe from XSS-based token theft) but that alone doesn't stop CSRF — a malicious site can still trigger a browser-authenticated cross-origin request since cookies are attached automatically. `sameSite` is `lax` in dev / `none` in production (`none` is required for the current cross-origin frontend/backend deploy topology, and `lax` doesn't fully cover CSRF on state-changing `POST`s either). Mitigation not yet built: a double-submit CSRF token (server sets a non-httpOnly `csrf_token` cookie, frontend echoes it back in a custom request header, backend rejects state-changing requests where the two don't match) or a `SameSite`-only fix if the deploy topology ever becomes same-site.
+
 ### Captioning: a real deviation from the spec, explained
 
 The spec names `Salesforce/blip-image-captioning-base` via Hugging Face's Inference API. That API no longer hosts **any** image-captioning model, confirmed directly rather than assumed:
@@ -41,13 +45,14 @@ The fix: captioning runs **self-hosted, in-process**, via `@huggingface/transfor
 
 ```
 user(id, email unique, password_hash, created_at)
+refresh_token(id, user_id fk, token_hash unique, expires_at, revoked_at nullable, user_agent, ip, created_at)
 job(id, user_id fk, filename, storage_key, mime_type, size_bytes,
     status enum[pending|processing|completed|failed], attempts, error, created_at, updated_at)
 job_result(job_id pk/fk, caption, labels jsonb, safe_search jsonb, flagged, flagged_category, created_at)
 notification(id, user_id fk, job_id fk, type, read, created_at)
 ```
 
-Indexes on `job(user_id, status, created_at)` and `notification(user_id, read)` for list-query performance.
+Indexes on `job(user_id, status, created_at)`, `notification(user_id, read)`, and `refresh_token(user_id)` for list-query performance.
 
 ## API reference
 
@@ -57,8 +62,8 @@ All responses: `{ success, status_code, message, result }`. Every endpoint excep
 |---|---|---|
 | POST | `/auth/signup` | Also logs in (sets cookies). |
 | POST | `/auth/login` | |
-| POST | `/auth/refresh` | Reads the refresh cookie, issues a new access token. |
-| POST | `/auth/logout` | Clears cookies; stateless JWT, nothing server-side to invalidate. |
+| POST | `/auth/refresh` | Reads the refresh cookie, validates it against the `refresh_tokens` table, then rotates: revokes that row and issues a new access token + new refresh token. |
+| POST | `/auth/logout` | Revokes the current session row (`refresh_tokens.revoked_at`), then clears cookies. |
 | POST | `/jobs` | Multipart `image` field. JPG/PNG/WEBP only, 5MB max, magic-byte verified (not just the declared `Content-Type`). Returns `202 { job_id }` immediately. |
 | GET | `/jobs` | `?status=&page=&limit=`. |
 | GET | `/jobs/stream` | SSE, per-user channel. Must be requested before `/jobs/:id` in the router — otherwise `:id` would swallow `"stream"` as a literal ID. |
@@ -179,3 +184,4 @@ Structured JSON logging (`pino`) throughout, not just at the edges:
 - `/uploads` (local storage driver) is served unauthenticated via `express.static` — storage keys are unguessable UUIDs, but this isn't hardened access control.
 - No `/auth/me` endpoint — the frontend works around this by caching the sanitized user object client-side after login/signup.
 - `express-rate-limit` is installed and applied to `/auth/signup` and `/auth/login`, but not yet to the upload or retry endpoints.
+- **No CSRF protection.** Auth relies on httpOnly cookies alone; there's no double-submit CSRF token or equivalent, so a state-changing request forged from another origin would still carry valid auth cookies. See the refresh-token architecture note above for the planned mitigation.

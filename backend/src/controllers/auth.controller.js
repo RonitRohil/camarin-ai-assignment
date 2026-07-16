@@ -4,7 +4,11 @@ const STATUS_CODES = require("../constants/statusCodes");
 
 exports.register = async (req, res, next) => {
     try {
-        const result = await auth_service.register(req.body);
+        const result = await auth_service.register({
+            ...req.body,
+            user_agent: req.headers["user-agent"],
+            ip: req.ip,
+        });
 
         res.cookie("access_token", result.access_token, auth_service.getAccessTokenCookieOptions());
         res.cookie("refresh_token", result.refresh_token, auth_service.getRefreshTokenCookieOptions());
@@ -22,7 +26,11 @@ exports.register = async (req, res, next) => {
 
 exports.login = async (req, res, next) => {
     try {
-        const result = await auth_service.login(req.body);
+        const result = await auth_service.login({
+            ...req.body,
+            user_agent: req.headers["user-agent"],
+            ip: req.ip,
+        });
 
         res.cookie("access_token", result.access_token, auth_service.getAccessTokenCookieOptions());
         res.cookie("refresh_token", result.refresh_token, auth_service.getRefreshTokenCookieOptions());
@@ -46,9 +54,14 @@ exports.refresh = async (req, res, next) => {
             throw new ApiError(STATUS_CODES.UNAUTHORIZED, "Refresh token missing");
         }
 
-        const result = await auth_service.refresh({ refresh_token });
+        const result = await auth_service.refresh({
+            refresh_token,
+            user_agent: req.headers["user-agent"],
+            ip: req.ip,
+        });
 
         res.cookie("access_token", result.access_token, auth_service.getAccessTokenCookieOptions());
+        res.cookie("refresh_token", result.refresh_token, auth_service.getRefreshTokenCookieOptions());
 
         res.status(STATUS_CODES.OK).json({
             success: true,
@@ -63,7 +76,9 @@ exports.refresh = async (req, res, next) => {
 
 exports.logout = async (req, res, next) => {
     try {
-        await auth_service.logout();
+        const refresh_token = req.cookies?.refresh_token;
+
+        await auth_service.logout({ refresh_token });
 
         res.clearCookie("access_token");
         res.clearCookie("refresh_token");

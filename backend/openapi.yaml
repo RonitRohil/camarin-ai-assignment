@@ -137,26 +137,31 @@ paths:
   /auth/refresh:
     post:
       tags: [Auth]
-      summary: Rotate the access token
+      summary: Rotate the access token and refresh token
       operationId: refreshToken
       description: >
-        Reads `refresh_token` from cookies (not the request body). On success,
-        sets a new `access_token` cookie. Does not rotate the refresh token.
+        Reads `refresh_token` from cookies (not the request body). The
+        presented refresh token is looked up server-side (by hash) and
+        rejected if it doesn't exist or has already been revoked. On success,
+        that session row is revoked and a brand-new access token *and*
+        refresh token are issued, both set as httpOnly cookies — the old
+        refresh token cannot be reused afterward (rotation with reuse
+        detection).
       security: []
       responses:
         "200":
-          description: Access token refreshed
+          description: Access and refresh tokens rotated
           headers:
             Set-Cookie:
               schema:
                 type: string
-              description: "access_token (httpOnly)"
+              description: "access_token and refresh_token (httpOnly)"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiResponseEnvelope"
         "401":
-          description: Refresh token missing, invalid, or expired
+          description: Refresh token missing, invalid, expired, or already revoked
           content:
             application/json:
               schema:
@@ -167,7 +172,10 @@ paths:
       tags: [Auth]
       summary: Log out
       operationId: logout
-      description: Stateless JWT — clears both cookies, no server-side session to invalidate.
+      description: >
+        Looks up the `refresh_token` cookie server-side and marks that
+        session row revoked, then clears both cookies — the refresh token is
+        no longer usable even if it hasn't expired yet.
       security: []
       responses:
         "200":
@@ -428,7 +436,9 @@ components:
         15-minute JWT set as an httpOnly cookie by /auth/signup or
         /auth/login. Refreshed via POST /auth/refresh using the separate
         7-day refresh_token cookie (also httpOnly, not usable directly as a
-        header).
+        header) — each refresh rotates that cookie too, and the backing
+        session row (`refresh_tokens` table) can be revoked server-side via
+        /auth/logout.
 
   parameters:
     JobId:
