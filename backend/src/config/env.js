@@ -45,6 +45,7 @@ const env = {
     R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY,
     R2_BUCKET_NAME: process.env.R2_BUCKET_NAME,
     REDIS_URL: process.env.REDIS_URL,
+    MODEL_CACHE_DIR: process.env.MODEL_CACHE_DIR || "./.cache/models",
 };
 
 module.exports = env;
