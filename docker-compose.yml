@@ -1,0 +1,109 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: camarin
+      POSTGRES_PASSWORD: camarin
+      POSTGRES_DB: camarin_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U camarin -d camarin_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # one-shot: applies pending Prisma migrations, then exits. api and worker
+  # both wait for this to finish successfully before starting, so there's no
+  # race between "schema not migrated yet" and either service querying it
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://camarin:camarin@postgres:5432/camarin_ai?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: npx prisma migrate deploy
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "5002:5002"
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://camarin:camarin@postgres:5432/camarin_ai?schema=public
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: local
+      LOCAL_STORAGE_DIR: /app/uploads
+      MODEL_CACHE_DIR: /app/.cache/models
+    volumes:
+      - uploads:/app/uploads
+      - model_cache:/app/.cache/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql://camarin:camarin@postgres:5432/camarin_ai?schema=public
+      REDIS_URL: redis://redis:6379
+      STORAGE_DRIVER: local
+      LOCAL_STORAGE_DIR: /app/uploads
+      MODEL_CACHE_DIR: /app/.cache/models
+    volumes:
+      - uploads:/app/uploads
+      - model_cache:/app/.cache/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Vite bakes this into the JS bundle at build time - must be reachable
+        # from the user's browser (the host-published api port), not the
+        # in-network service name (http://api:5002 wouldn't resolve there)
+        VITE_API_URL: http://localhost:5002
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
+  uploads:
+  model_cache:
