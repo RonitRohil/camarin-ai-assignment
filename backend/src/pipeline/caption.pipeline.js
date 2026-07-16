@@ -37,7 +37,9 @@ const generateCaption = async (image_buffer) => {
             .flatten({ background: "#ffffff" })
             .jpeg()
             .toBuffer();
-    } catch (err) {
+    } 
+    
+    catch (err) {
         const error = new Error(`Unable to process image for captioning: ${err.message}`);
         error.is_permanent = true;
         throw error;
