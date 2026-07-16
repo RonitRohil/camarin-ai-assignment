@@ -1,10 +1,12 @@
 const { Queue } = require("bullmq");
 const IORedis = require("ioredis");
 const env = require("../config/env");
-
-const QUEUE_NAME = "image-processing";
-const MAX_ATTEMPTS = 3;
-const BACKOFF_BASE_DELAY_MS = 5000;
+const {
+    QUEUE_NAME,
+    JOB_NAME,
+    MAX_ATTEMPTS,
+    BACKOFF_BASE_DELAY_MS,
+} = require("../constants/queue");
 
 // BullMQ requires this on the underlying ioredis connection, otherwise blocking
 // commands (used internally by BullMQ) can silently retry forever
@@ -14,7 +16,7 @@ const image_processing_queue = new Queue(QUEUE_NAME, { connection });
 
 const enqueueJob = async (job_id) => {
     await image_processing_queue.add(
-        "process-image",
+        JOB_NAME,
         { job_id },
         {
             // reusing our own job id as BullMQ's jobId makes retry-button
@@ -29,7 +31,6 @@ const enqueueJob = async (job_id) => {
 };
 
 module.exports = {
-    QUEUE_NAME,
     image_processing_queue,
     enqueueJob,
 };
