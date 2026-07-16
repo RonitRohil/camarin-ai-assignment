@@ -7,6 +7,7 @@ const REQUIRED_ENV_VARS = [
     "JWT_ACCESS_SECRET",
     "JWT_REFRESH_SECRET",
     "REDIS_URL",
+    "GOOGLE_VISION_API_KEY",
 ];
 
 if (storage_driver === "r2") {
@@ -46,6 +47,7 @@ const env = {
     R2_BUCKET_NAME: process.env.R2_BUCKET_NAME,
     REDIS_URL: process.env.REDIS_URL,
     MODEL_CACHE_DIR: process.env.MODEL_CACHE_DIR || "./.cache/models",
+    GOOGLE_VISION_API_KEY: process.env.GOOGLE_VISION_API_KEY,
 };
 
 module.exports = env;
