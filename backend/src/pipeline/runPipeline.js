@@ -1,6 +1,6 @@
 const prisma_client = require("../utils/prismaClient");
 const storage = require("../services/storage");
-const { generateCaption } = require("./caption.pipeline");
+const { generateCaption } = require("./caption");
 const { analyzeImage, isFlagged } = require("./vision.pipeline");
 const JOB_STATUS = require("../constants/jobStatus");
 const sse_service = require("../services/sse.service");

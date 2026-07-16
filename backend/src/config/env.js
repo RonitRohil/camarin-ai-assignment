@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const storage_driver = process.env.STORAGE_DRIVER || "local";
+const caption_driver = process.env.CAPTION_DRIVER || "local";
 
 const REQUIRED_ENV_VARS = [
     "DATABASE_URL",
@@ -17,6 +18,10 @@ if (storage_driver === "r2") {
         "R2_SECRET_ACCESS_KEY",
         "R2_BUCKET_NAME"
     );
+}
+
+if (caption_driver === "api") {
+    REQUIRED_ENV_VARS.push("HF_ACCESS_TOKEN");
 }
 
 const missing_vars = REQUIRED_ENV_VARS.filter((key) => !process.env[key]);
@@ -48,6 +53,9 @@ const env = {
     REDIS_URL: process.env.REDIS_URL,
     MODEL_CACHE_DIR: process.env.MODEL_CACHE_DIR || "./.cache/models",
     GOOGLE_VISION_API_KEY: process.env.GOOGLE_VISION_API_KEY,
+    CAPTION_DRIVER: caption_driver,
+    HF_ACCESS_TOKEN: process.env.HF_ACCESS_TOKEN,
+    COMBINED_MODE: ["true", "1"].includes(String(process.env.COMBINED_MODE).toLowerCase()),
 };
 
 module.exports = env;
