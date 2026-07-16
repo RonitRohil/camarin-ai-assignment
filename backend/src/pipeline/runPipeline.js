@@ -1,11 +1,13 @@
 const prisma_client = require("../utils/prismaClient");
 const storage = require("../services/storage");
 const { generateCaption } = require("./caption.pipeline");
-const { analyzeImage } = require("./vision.pipeline");
+const { analyzeImage, isFlagged } = require("./vision.pipeline");
 const JOB_STATUS = require("../constants/jobStatus");
 const sse_service = require("../services/sse.service");
 
 const NOTIFICATION_TYPE_JOB_FLAGGED = "job_flagged";
+const NOTIFICATION_TYPE_JOB_COMPLETED = "job_completed";
+const NOTIFICATION_TYPE_JOB_FAILED = "job_failed";
 
 // single entry point for every pickup - fresh, automatic BullMQ retry, or a
 // user-triggered Retry click. No separate "first attempt" vs "retry" code path:
@@ -78,6 +80,13 @@ const runPipeline = async (job_id) => {
         });
 
         if (err.is_permanent) {
+            await prisma_client.notification.create({
+                data: {
+                    user_id: job.user_id,
+                    job_id: job.id,
+                    type: NOTIFICATION_TYPE_JOB_FAILED,
+                },
+            });
             await sse_service.publishJobUpdate(job.user_id, {
                 job_id,
                 status: JOB_STATUS.FAILED,
@@ -95,6 +104,17 @@ const runPipeline = async (job_id) => {
         where: { id: job_id },
         data: { status: JOB_STATUS.COMPLETED, error: null },
     });
+
+    if (!isFlagged(job_result.safe_search)) {
+        await prisma_client.notification.create({
+            data: {
+                user_id: job.user_id,
+                job_id: job.id,
+                type: NOTIFICATION_TYPE_JOB_COMPLETED,
+            },
+        });
+    }
+
     await sse_service.publishJobUpdate(job.user_id, {
         job_id,
         status: JOB_STATUS.COMPLETED,

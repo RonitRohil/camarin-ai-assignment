@@ -3,6 +3,9 @@ const env = require("../config/env");
 const VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate";
 const FLAGGED_LIKELIHOODS = ["LIKELY", "VERY_LIKELY"];
 
+const isFlagged = (safe_search) =>
+    Object.values(safe_search || {}).some((likelihood) => FLAGGED_LIKELIHOODS.includes(likelihood));
+
 const analyzeImage = async (image_buffer) => {
     const base64_content = image_buffer.toString("base64");
 
@@ -60,4 +63,4 @@ const analyzeImage = async (image_buffer) => {
     };
 };
 
-module.exports = { analyzeImage };
+module.exports = { analyzeImage, isFlagged };
