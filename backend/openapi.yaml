@@ -1,0 +1,710 @@
+openapi: 3.0.3
+info:
+  title: Camarin AI — Media Processing Microservice API
+  description: >
+    Users upload an image; the platform stores it, queues it, and asynchronously
+    enriches it with AI-derived metadata (caption, labels, safety classification)
+    without blocking the upload request.
+
+
+    Every JSON response (success or error) uses the same envelope:
+    `{ success, status_code, message, result }`.
+
+
+    Auth is via httpOnly cookies (`access_token`, `refresh_token`), not bearer
+    headers — set automatically by `/auth/signup` and `/auth/login`, so a
+    cookie-jar-aware client (or a browser) just needs to send credentials on
+    subsequent requests.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:5002
+    description: Local (docker-compose)
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Jobs
+  - name: Notifications
+
+security:
+  - cookieAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness check
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /ready:
+    get:
+      tags: [Health]
+      summary: Readiness check
+      operationId: getReady
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/Ok"
+
+  /auth/signup:
+    post:
+      tags: [Auth]
+      summary: Register a new user
+      operationId: signup
+      description: On success, sets `access_token` and `refresh_token` httpOnly cookies.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+      responses:
+        "201":
+          description: User registered
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: "access_token and refresh_token (httpOnly)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponseEnvelope"
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          user:
+                            $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in
+      operationId: login
+      description: On success, sets `access_token` and `refresh_token` httpOnly cookies.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Logged in
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: "access_token and refresh_token (httpOnly)"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponseEnvelope"
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          user:
+                            $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the access token
+      operationId: refreshToken
+      description: >
+        Reads `refresh_token` from cookies (not the request body). On success,
+        sets a new `access_token` cookie. Does not rotate the refresh token.
+      security: []
+      responses:
+        "200":
+          description: Access token refreshed
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: "access_token (httpOnly)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseEnvelope"
+        "401":
+          description: Refresh token missing, invalid, or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out
+      operationId: logout
+      description: Stateless JWT — clears both cookies, no server-side session to invalidate.
+      security: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseEnvelope"
+
+  /jobs:
+    post:
+      tags: [Jobs]
+      summary: Upload an image and queue it for processing
+      operationId: uploadJob
+      description: >
+        Accepts a single image (JPG/PNG/WEBP, max 5MB). The declared
+        `Content-Type` is not trusted — the server sniffs the actual file
+        bytes and rejects a mismatch. Processing (caption + label/safety
+        detection) happens asynchronously on a worker; this call only
+        creates the job record and enqueues it.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: JPG, PNG, or WEBP, max 5MB
+      responses:
+        "202":
+          description: Job created and queued
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponseEnvelope"
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          job_id:
+                            type: string
+                            format: uuid
+        "400":
+          description: >
+            No file uploaded, file too large (>5MB), or file content/extension
+            does not match an allowed image type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    get:
+      tags: [Jobs]
+      summary: List the current user's jobs
+      operationId: listJobs
+      parameters:
+        - $ref: "#/components/parameters/JobStatusFilter"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Jobs fetched
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponseEnvelope"
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          jobs:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/JobListItem"
+                          pagination:
+                            $ref: "#/components/schemas/Pagination"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /jobs/stream:
+    get:
+      tags: [Jobs]
+      summary: Live job status updates (Server-Sent Events)
+      operationId: streamJobUpdates
+      description: >
+        `text/event-stream` connection, one per authenticated user, backed by
+        Redis pub/sub (any API replica can serve any user's stream — the
+        worker publishes status changes, this endpoint just relays them). The
+        server sends a `: connected` comment immediately, then a `: heartbeat`
+        comment every 20s to keep intermediary proxies from timing out the
+        connection. Actual job events arrive as `data: <json>` lines shaped
+        like `JobStreamEvent`. There is no `event:` field — all events are
+        untyped `message` events; distinguish them by the `status` key in the
+        payload. If `EventSource` is unavailable, the frontend falls back to
+        15s polling of `GET /jobs/{id}` instead.
+      responses:
+        "200":
+          description: >
+            An open `text/event-stream` connection. Not representable as a
+            single JSON response — see description for the payload shape sent
+            on each `data:` line.
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/JobStreamEvent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /jobs/{id}:
+    get:
+      tags: [Jobs]
+      summary: Get a single job, including its full result and a signed image URL
+      operationId: getJob
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Job fetched
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponseEnvelope"
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          job:
+                            $ref: "#/components/schemas/JobDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /jobs/{id}/retry:
+    post:
+      tags: [Jobs]
+      summary: Re-enqueue a failed job
+      operationId: retryJob
+      description: >
+        Only valid for jobs currently in `failed` status — any other status
+        returns 409. Resets `attempts` to 0 and clears `error`, then
+        re-enters the same pipeline function used for the original attempt,
+        which resumes from whichever stage (caption / vision) wasn't already
+        checkpointed successfully rather than redoing completed work.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Job queued for retry
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponseEnvelope"
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          job:
+                            $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Only failed jobs can be retried
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List the current user's notifications
+      operationId: listNotifications
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Notifications fetched
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponseEnvelope"
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          notifications:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Notification"
+                          pagination:
+                            $ref: "#/components/schemas/Pagination"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Mark a notification as read
+      operationId: markNotificationRead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiResponseEnvelope"
+                  - type: object
+                    properties:
+                      result:
+                        type: object
+                        properties:
+                          notification:
+                            $ref: "#/components/schemas/Notification"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: >
+        15-minute JWT set as an httpOnly cookie by /auth/signup or
+        /auth/login. Refreshed via POST /auth/refresh using the separate
+        7-day refresh_token cookie (also httpOnly, not usable directly as a
+        header).
+
+  parameters:
+    JobId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 10
+    JobStatusFilter:
+      name: status
+      in: query
+      schema:
+        $ref: "#/components/schemas/JobStatus"
+
+  responses:
+    Ok:
+      description: OK
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiResponseEnvelope"
+    BadRequest:
+      description: Request failed validation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Missing, invalid, or expired access token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource does not exist, or does not belong to the current user
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    ApiResponseEnvelope:
+      type: object
+      description: Shape shared by every success response.
+      properties:
+        success:
+          type: boolean
+          example: true
+        status_code:
+          type: integer
+          example: 200
+        message:
+          type: string
+        result:
+          type: object
+
+    ErrorResponse:
+      type: object
+      description: >
+        Shape shared by every error response, including the global 404
+        fallback for unmatched routes. `result.stack` is only populated when
+        the server runs with DEVELOPMENT=true.
+      properties:
+        success:
+          type: boolean
+          example: false
+        status_code:
+          type: integer
+        message:
+          type: string
+        result:
+          type: object
+          properties:
+            stack:
+              type: string
+              nullable: true
+
+    SignupRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          format: password
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        created_at:
+          type: string
+          format: date-time
+
+    JobStatus:
+      type: string
+      enum: [pending, processing, completed, failed]
+
+    Job:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        storage_key:
+          type: string
+          description: Internal object-storage key (local path or R2 key). Not a URL.
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        attempts:
+          type: integer
+          description: Number of pipeline attempts made so far (BullMQ retries + manual retries).
+        error:
+          type: string
+          nullable: true
+          description: Last error message, cleared on a successful attempt.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    JobListItem:
+      description: Job shape returned by `GET /jobs` — includes only a partial result (flag status), not the full caption/labels.
+      allOf:
+        - $ref: "#/components/schemas/Job"
+        - type: object
+          properties:
+            result:
+              type: object
+              nullable: true
+              properties:
+                flagged:
+                  type: boolean
+                  nullable: true
+                flagged_category:
+                  type: string
+                  nullable: true
+
+    JobResult:
+      type: object
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        caption:
+          type: string
+          nullable: true
+          description: Self-hosted BLIP caption. Null until the caption stage completes.
+        labels:
+          type: array
+          nullable: true
+          description: Google Cloud Vision label detections. Null until the vision stage completes.
+          items:
+            type: object
+        safe_search:
+          type: object
+          nullable: true
+          description: Google Cloud Vision SafeSearch annotation (adult/violence/racy/etc. likelihoods).
+        flagged:
+          type: boolean
+          nullable: true
+        flagged_category:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    JobDetail:
+      description: Job shape returned by `GET /jobs/{id}` — full result plus a signed/servable image URL.
+      allOf:
+        - $ref: "#/components/schemas/Job"
+        - type: object
+          properties:
+            result:
+              $ref: "#/components/schemas/JobResult"
+            image_url:
+              type: string
+              description: >
+                Signed URL (R2) or `/uploads/:key` static path (local driver)
+                for the original uploaded image.
+
+    JobStreamEvent:
+      type: object
+      description: Payload of each SSE `data:` line on `GET /jobs/stream`.
+      required: [job_id, status]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/JobStatus"
+        error:
+          type: string
+          description: Present only on a `failed` event.
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        job_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [job_completed, job_failed, job_flagged]
+          description: >
+            job_completed and job_failed are terminal-status notifications.
+            job_flagged fires separately whenever Vision SafeSearch flags the
+            image, in addition to (not instead of) job_completed.
+        read:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
