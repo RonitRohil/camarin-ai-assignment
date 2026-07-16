@@ -2,11 +2,9 @@ const { Worker } = require("bullmq");
 const IORedis = require("ioredis");
 const env = require("./config/env");
 const logger = require("./utils/logger");
-const prisma_client = require("./utils/prismaClient");
 const runPipeline = require("./pipeline/runPipeline");
-const JOB_STATUS = require("./constants/jobStatus");
+const handleJobFailure = require("./pipeline/handleJobFailure");
 const { QUEUE_NAME } = require("./constants/queue");
-const sse_service = require("./services/sse.service");
 
 // sequential for now - the self-hosted caption model is a single in-process
 // singleton, and concurrent inference calls against it are unverified. Revisit
@@ -27,39 +25,7 @@ worker.on("completed", (job) => {
     logger.info(`job ${job.data.job_id} completed`);
 });
 
-worker.on("failed", async (job, err) => {
-    if (!job) {
-        logger.error(`job failed with no job reference: ${err.message}`);
-        return;
-    }
-
-    logger.error(`job ${job.data.job_id} attempt failed: ${err.message}`);
-
-    // runPipeline only marks status=failed for permanent errors (it rethrows
-    // transient ones for BullMQ to retry) - once BullMQ itself has exhausted
-    // every attempt on a transient error, the job would otherwise stay stuck
-    // at "processing" forever, so the worker closes that gap here
-    if (job.attemptsMade >= job.opts.attempts) {
-        try {
-            const updated_job = await prisma_client.job.update({
-                where: { id: job.data.job_id },
-                data: { status: JOB_STATUS.FAILED, error: err.message },
-            });
-
-            await sse_service.publishJobUpdate(updated_job.user_id, {
-                job_id: updated_job.id,
-                status: JOB_STATUS.FAILED,
-                error: err.message,
-            });
-        } 
-        
-        catch (update_err) {
-            logger.error(
-                `failed to mark job ${job.data.job_id} as failed after exhausted retries: ${update_err.message}`
-            );
-        }
-    }
-});
+worker.on("failed", handleJobFailure);
 
 worker.on("error", (err) => {
     logger.error(`worker connection error: ${err.message}`);
