@@ -8,10 +8,13 @@ import { formatDateTime, formatFileSize } from "../utils/format";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const PAGE_SIZE = 20;
 
 const JobsList = () => {
     const [jobs, setJobs] = useState([]);
+    const [pagination, setPagination] = useState({ page: 1, total_pages: 1 });
     const [status_filter, setStatusFilter] = useState("");
+    const [page, setPage] = useState(1);
     const [is_loading, setIsLoading] = useState(true);
     const [list_error, setListError] = useState("");
     const [selected_file, setSelectedFile] = useState(null);
@@ -21,15 +24,21 @@ const JobsList = () => {
     const fetchJobs = useCallback(async () => {
         setIsLoading(true);
         try {
-            const result = await listJobs({ status: status_filter || undefined, limit: 50 });
+            const result = await listJobs({ status: status_filter || undefined, page, limit: PAGE_SIZE });
             setJobs(result.jobs);
+            setPagination(result.pagination);
             setListError("");
         } catch (err) {
             setListError(err.response?.data?.message || "Failed to load jobs");
         } finally {
             setIsLoading(false);
         }
-    }, [status_filter]);
+    }, [status_filter, page]);
+
+    const handleStatusFilterChange = (event) => {
+        setStatusFilter(event.target.value);
+        setPage(1);
+    };
 
     useEffect(() => {
         // fetch-on-mount/filter-change - no data-fetching library in this stack, see IMPLEMENTATION.md
@@ -86,7 +95,11 @@ const JobsList = () => {
             await uploadJob(selected_file);
             setSelectedFile(null);
             event.target.reset();
-            await fetchJobs();
+            if (page === 1) {
+                await fetchJobs();
+            } else {
+                setPage(1);
+            }
         } catch (err) {
             setUploadError(err.response?.data?.message || "Upload failed");
         } finally {
@@ -107,7 +120,7 @@ const JobsList = () => {
 
             <div className="jobs-list-header">
                 <h2>Jobs</h2>
-                <select value={status_filter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <select value={status_filter} onChange={handleStatusFilterChange}>
                     <option value="">All statuses</option>
                     <option value="pending">Pending</option>
                     <option value="processing">Processing</option>
@@ -143,6 +156,24 @@ const JobsList = () => {
                     </li>
                 ))}
             </ul>
+
+            {pagination.total_pages > 1 ? (
+                <div className="pager">
+                    <button type="button" onClick={() => setPage((current) => current - 1)} disabled={page <= 1}>
+                        Previous
+                    </button>
+                    <span>
+                        Page {pagination.page} of {pagination.total_pages}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => setPage((current) => current + 1)}
+                        disabled={page >= pagination.total_pages}
+                    >
+                        Next
+                    </button>
+                </div>
+            ) : null}
         </div>
     );
 };

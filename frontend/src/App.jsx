@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useAuth } from "./hooks/useAuth";
 import ProtectedRoute from "./components/ProtectedRoute";
+import NotificationsBell from "./components/NotificationsBell";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import JobsList from "./pages/JobsList";
@@ -16,6 +17,7 @@ const App = () => {
                 <header className="app-header">
                     <span className="app-header-brand">Camarin AI</span>
                     <span className="app-header-user">
+                        <NotificationsBell />
                         {user.email}
                         <button type="button" onClick={logout}>
                             Log out

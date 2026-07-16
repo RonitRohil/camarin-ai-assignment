@@ -14,8 +14,9 @@ const getObject = async (storage_key) => {
 };
 
 const getSignedUrl = async (storage_key) => {
-    // no real signed-URL concept on disk - local dev has no route serving these yet,
-    // this is just here so callers don't need to know which driver is active
+    // no real signed-URL concept on disk - app.js serves this path via
+    // express.static, this is just here so callers don't need to know which
+    // driver is active
     return `/uploads/${storage_key}`;
 };
 

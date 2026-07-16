@@ -27,8 +27,18 @@ app.use(cookie_parser());
 // local storage's getSignedUrl (services/storage/local.storage.js) just returns
 // `/uploads/:key` - this is what actually serves that path in dev. R2 doesn't need
 // this, its signed URLs point directly at Cloudflare.
+// helmet's default Cross-Origin-Resource-Policy (same-origin) blocks the frontend
+// (localhost:5173) from loading <img> served from the API (localhost:5002), so it's
+// relaxed just for this route rather than globally.
 if (env.STORAGE_DRIVER === "local") {
-    app.use("/uploads", express.static(env.LOCAL_STORAGE_DIR));
+    app.use(
+        "/uploads",
+        (req, res, next) => {
+            res.set("Cross-Origin-Resource-Policy", "cross-origin");
+            next();
+        },
+        express.static(env.LOCAL_STORAGE_DIR)
+    );
 }
 
 app.get("/health", (req, res) => {
