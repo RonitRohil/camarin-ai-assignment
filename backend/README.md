@@ -145,7 +145,14 @@ Needs a reachable Postgres and Redis (docker-compose can supply just those: `doc
 npm test
 ```
 
-22 unit tests (`vitest`) across `tests/pipeline.test.js` (caption/vision stage functions, mocked HF/Vision clients) and `tests/retry.test.js` (checkpoint/resume logic across every combination of already-checkpointed stages, permanent-vs-transient error handling, the worker-level exhausted-retries safety net, and the actual BullMQ backoff config values) — the explicit minimum bar per the assignment's evaluation criteria, not a bonus. Fully self-contained: no real `DATABASE_URL`/`REDIS_URL`/API keys needed (confirmed by running the full suite with `.env` removed), CI runs it with no service containers or secrets.
+23 unit tests (`vitest`) across four files — the explicit minimum bar per the assignment's evaluation criteria, not a bonus:
+
+- `tests/pipeline.test.js` (7) — caption/vision stage functions, mocked HF/Vision clients.
+- `tests/retry.test.js` (13) — checkpoint/resume logic across every combination of already-checkpointed stages, permanent-vs-transient error handling, the worker-level exhausted-retries safety net, and the actual BullMQ backoff config values.
+- `tests/queue.service.test.js` (2) — the `retryJob` → `resetAttemptsMade` fix (Architecture decisions above).
+- `tests/auth.refresh.test.js` (1) — the refresh-rotation flow (register → refresh → old token 401s on reuse → rotated token still works), added after two production incidents shipped from this exact code path (see the root [README.md](../README.md#6-deployment--the-real-story)).
+
+Fully self-contained: no real `DATABASE_URL`/`REDIS_URL`/API keys needed (confirmed by running the full suite with `.env` removed), CI runs it with no service containers or secrets.
 
 `vi.mock()` doesn't intercept `require()` in this CommonJS setup (confirmed via an isolated repro — it only reaches ESM `import`, never a nested `require()` at any depth). Mocking here uses manual `require.cache` substitution instead.
 
