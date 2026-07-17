@@ -229,7 +229,9 @@ cd backend && npm test
 
 Unit tests (`vitest`) cover the caption/vision pipeline stage functions (mocked AI clients), the full checkpoint/resume matrix across every combination of already-checkpointed stages, permanent-vs-transient error classification, the worker-level exhausted-retries safety net, the actual BullMQ backoff configuration values, and the retry-button `resetAttemptsMade` fix specifically. CI (`.github/workflows/ci.yml`) runs lint + test on every push with zero live credentials required — every external dependency (`prismaClient`, `storage`, the AI pipeline modules) is stubbed via `require.cache` substitution, confirmed by running the suite with `.env` removed entirely.
 
-**Known gap:** `auth.service.js` (signup, login, refresh rotation, logout) has no automated test coverage yet — both incidents in Section 6's deployment story happened in this exact code path and were caught by manual `curl` verification against the live deployment, not by the suite. A rotation-flow test (sign up → refresh → assert the old token now rejects on reuse) is the single highest-value addition if this pipeline gets touched again; the pipeline stage tests above are the stronger suite precisely because that code has never shipped a bug the tests didn't already cover.
+`auth.service.js`'s refresh-rotation path — the exact code path behind both incidents in Section 6's deployment story — is now covered by `tests/auth.refresh.test.js`: register → refresh once → assert the old refresh token 401s on reuse → assert the rotated token still works, against an in-memory `users`/`refresh_tokens` stub (same `require.cache` substitution trick as the pipeline tests, needed here because rotation is only meaningful if state written by one `refresh()` call persists into the next). 23/23 tests pass.
+
+**Known gap:** `login` and `logout` still have no automated coverage — only the refresh-rotation flow above does, since it was the path that had actually shipped bugs. Both are simple enough (and covered indirectly by every manual/CI verification pass) that they're a lower-priority backfill than rotation was.
 
 ---
 
