@@ -17,7 +17,7 @@ const signAccessToken = (payload) => {
 };
 
 const signRefreshToken = (payload) => {
-    return jwt.sign(payload, env.JWT_REFRESH_SECRET, {
+    return jwt.sign({ ...payload, jti: crypto.randomUUID() }, env.JWT_REFRESH_SECRET, {
         expiresIn: REFRESH_TOKEN_EXPIRY,
     });
 };
