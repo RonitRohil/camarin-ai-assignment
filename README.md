@@ -177,6 +177,12 @@ The spec's tech-stack table lists Cloud Platform, CI/CD, Auth, Queue, and File S
 
 **CORS**, briefly: Vercel assigns a predictable project URL as soon as the project is named, so `CORS_ORIGIN` on Render was set correctly from the first deploy — no deploy-patch-redeploy round trip needed.
 
+**Two more incidents, both from shipping session-backed refresh tokens after the initial deploy was already live** — worth including because they're a good illustration of what "it works locally" actually leaves out.
+
+The first: after adding the `refresh_tokens` table and pushing, `/auth/signup` started returning a 500 in production — `"The table public.refresh_tokens does not exist in the current database"` — while working fine locally. Render's build command was `npm install && npx prisma generate`, which regenerates the Prisma *client* from the schema file but does not apply pending *migrations* to the live database; `docker-compose.yml` runs an explicit migration step that Render's build command had no equivalent of. Fixed by running `prisma migrate deploy` directly against the Neon connection string, and by changing Render's build command to `npm install && npx prisma migrate deploy && npx prisma generate` so a future schema change can't silently ship code that expects a table the database doesn't have yet.
+
+The second surfaced right after: `/auth/refresh` started 500ing with `"Unique constraint failed on the fields: (token_hash)"`. Root cause was in `signRefreshToken` — the signed payload was just `{ user_id }`, and a JWT's `iat` claim only has second-level precision, so two refresh tokens issued for the same user within the same wall-clock second (a real path: login immediately followed by a request that 401s and triggers the axios interceptor's auto-refresh) come out byte-identical, hash identically, and collide on the table's unique `token_hash` constraint. Not a curl-testing artifact — a genuinely reachable production bug. Fixed by adding a `jti: crypto.randomUUID()` claim to the signed payload so no two issued tokens are ever identical regardless of timing. Both incidents were caught by live `curl` verification against the deployed URLs — signup, then refresh, then deliberately reusing an old token — rather than by the automated test suite, which doesn't yet cover `auth.service.js`; that gap is the most concrete, evidence-backed item in [Testing](#testing) below.
+
 ---
 
 ## 7. Scalability Under 10x Load
@@ -222,6 +228,8 @@ cd backend && npm test
 ```
 
 Unit tests (`vitest`) cover the caption/vision pipeline stage functions (mocked AI clients), the full checkpoint/resume matrix across every combination of already-checkpointed stages, permanent-vs-transient error classification, the worker-level exhausted-retries safety net, the actual BullMQ backoff configuration values, and the retry-button `resetAttemptsMade` fix specifically. CI (`.github/workflows/ci.yml`) runs lint + test on every push with zero live credentials required — every external dependency (`prismaClient`, `storage`, the AI pipeline modules) is stubbed via `require.cache` substitution, confirmed by running the suite with `.env` removed entirely.
+
+**Known gap:** `auth.service.js` (signup, login, refresh rotation, logout) has no automated test coverage yet — both incidents in Section 6's deployment story happened in this exact code path and were caught by manual `curl` verification against the live deployment, not by the suite. A rotation-flow test (sign up → refresh → assert the old token now rejects on reuse) is the single highest-value addition if this pipeline gets touched again; the pipeline stage tests above are the stronger suite precisely because that code has never shipped a bug the tests didn't already cover.
 
 ---
 

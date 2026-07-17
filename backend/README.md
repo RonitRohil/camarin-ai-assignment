@@ -178,7 +178,6 @@ Structured JSON logging (`pino`) throughout, not just at the edges:
 
 ## Known limitations
 
-- **Not yet deployed.**
 - Self-hosted caption model doesn't fit a 512MB free-tier RAM budget even quantized — see the captioning section above.
 - Worker has no HTTP health endpoint (no HTTP server exists in `worker.js` to check against) — the original "healthz/readyz on both services" idea would need a small dedicated listener added. (`GET /ready` on the API does now do a real dependency check, see Observability above.)
 - `/uploads` (local storage driver) is served unauthenticated via `express.static` — storage keys are unguessable UUIDs, but this isn't hardened access control.
